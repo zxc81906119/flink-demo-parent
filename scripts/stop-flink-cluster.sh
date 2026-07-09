@@ -13,7 +13,9 @@ echo "[INFO] Stopping and removing Flink containers..."
 for name in "${CONTAINER_PREFIX}-client" \
             "${CONTAINER_PREFIX}-taskmanager-2" \
             "${CONTAINER_PREFIX}-taskmanager-1" \
-            "${CONTAINER_PREFIX}-jobmanager"; do
+            "${CONTAINER_PREFIX}-jobmanager" \
+            "hadoop-datanode" \
+            "hadoop-namenode"; do
     if podman container exists "${name}" 2>/dev/null; then
         echo "  -> Stopping ${name}..."
         podman stop "${name}" 2>/dev/null || true

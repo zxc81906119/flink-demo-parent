@@ -71,7 +71,7 @@ podman run -d \
     taskmanager
 
 # ------------------------------------------------------------------
-# 5. 啟動 Flink Client (掛載專案 target/ 目錄)
+# 7. 啟動 Flink Client (掛載專案 target/ 目錄)
 #    容器保持執行狀態，使用者可透過 podman exec 進入提交 job
 # ------------------------------------------------------------------
 echo "[INFO] Starting Flink Client..."
@@ -79,6 +79,7 @@ podman run -d \
     --name "${CONTAINER_PREFIX}-client" \
     --network "${NETWORK_NAME}" \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
+    -e HADOOP_CONF_DIR=/opt/flink/conf \
     -v "${PROJECT_DIR}/target:/opt/flink/usrlib:z" \
     "${FLINK_IMAGE}" \
     sleep infinity
@@ -88,6 +89,7 @@ echo "=========================================="
 echo " Flink Session Cluster is UP!"
 echo "=========================================="
 echo ""
+echo " HDFS NameNode    : http://localhost:9870"
 echo " JobManager WebUI : http://localhost:8081"
 echo " TaskManagers     : 2 (each with 2 task slots)"
 echo " Flink Client     : ${CONTAINER_PREFIX}-client"
