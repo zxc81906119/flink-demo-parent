@@ -35,6 +35,7 @@ echo "[INFO] Target: ${JOBMANAGER_ADDRESS}"
 echo "[INFO] Extra args: ${EXTRA_ARGS:-<none>}"
 echo ""
 
+export MSYS_NO_PATHCONV=1
 podman exec "${CLIENT_CONTAINER}" \
     flink run -m "${JOBMANAGER_ADDRESS}" \
     ${EXTRA_ARGS} \

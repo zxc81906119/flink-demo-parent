@@ -14,15 +14,19 @@ HADOOP_IMAGE="docker.io/apache/hadoop:${HADOOP_VERSION}"
 NETWORK_NAME="flink-network"
 CONTAINER_PREFIX="flink"
 
-# Hadoop 3.x Client JARs (從 Maven Central 下載)
+# Hadoop 3.x Client JARs + 必要依賴 (從 Maven Central 下載)
 # hadoop-client-api    : Hadoop client 所有 API 介面
 # hadoop-client-runtime: 執行時期 uber-jar（已 shaded，不與 Flink 衝突）
+# commons-logging      : Hadoop FileSystem 直接依賴（未被 runtime jar shaded）
 HADOOP_CLIENT_VERSION="3.3.6"
-HADOOP_JARS=(
-    "hadoop-client-api-${HADOOP_CLIENT_VERSION}.jar"
-    "hadoop-client-runtime-${HADOOP_CLIENT_VERSION}.jar"
+COMMONS_LOGGING_VERSION="1.2"
+
+# 格式: "jar檔名|完整下載URL"
+HADOOP_DOWNLOAD_LIST=(
+    "hadoop-client-api-${HADOOP_CLIENT_VERSION}.jar|https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-api/${HADOOP_CLIENT_VERSION}/hadoop-client-api-${HADOOP_CLIENT_VERSION}.jar"
+    "hadoop-client-runtime-${HADOOP_CLIENT_VERSION}.jar|https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-client-runtime/${HADOOP_CLIENT_VERSION}/hadoop-client-runtime-${HADOOP_CLIENT_VERSION}.jar"
+    "commons-logging-${COMMONS_LOGGING_VERSION}.jar|https://repo1.maven.org/maven2/commons-logging/commons-logging/${COMMONS_LOGGING_VERSION}/commons-logging-${COMMONS_LOGGING_VERSION}.jar"
 )
-MAVEN_BASE_URL="https://repo1.maven.org/maven2/org/apache/hadoop"
 
 # 專案根目錄 (腳本位於 scripts/ 下)
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -47,24 +51,21 @@ echo " Network          : ${NETWORK_NAME}"
 echo "=========================================="
 
 # ------------------------------------------------------------------
-# 0. 從 Maven Central 下載 Hadoop 3.x Client JARs (若不存在)
-#    Hadoop 3.x 官方提供 hadoop-client-api + hadoop-client-runtime
-#    兩個 uber-jar 即可提供完整的 HDFS client 支援
+# 0. 從 Maven Central 下載 Hadoop 3.x Client JARs + 依賴 (若不存在)
+#    hadoop-client-api + hadoop-client-runtime + commons-logging
 # ------------------------------------------------------------------
 mkdir -p "${HADOOP_LIB_HOST}"
 echo "[INFO] Checking Hadoop client jars..."
-for jar_name in "${HADOOP_JARS[@]}"; do
+for entry in "${HADOOP_DOWNLOAD_LIST[@]}"; do
+    jar_name="${entry%%|*}"
+    download_url="${entry##*|}"
     jar_path="${HADOOP_LIB_HOST}/${jar_name}"
     if [ ! -f "${jar_path}" ]; then
-        # 從 jar 名稱推導 artifactId (去掉版本號)
-        artifact_id="${jar_name%-${HADOOP_CLIENT_VERSION}.jar}"
-        download_url="${MAVEN_BASE_URL}/${artifact_id}/${HADOOP_CLIENT_VERSION}/${jar_name}"
         echo "[INFO] Downloading ${jar_name} from Maven Central..."
         echo "       URL: ${download_url}"
-        # 使用 pushd + 相對路徑避免 Windows MSYS 路徑轉換問題
-        pushd "${HADOOP_LIB_HOST}" > /dev/null
-        curl -fSL -o "${jar_name}" "${download_url}"
-        popd > /dev/null
+
+        unset MSYS_NO_PATHCONV  # 避免 Windows Git Bash 對路徑轉換
+        curl -fSL -o "${jar_path}" "${download_url}"
         if [ -f "${jar_path}" ]; then
             echo "[INFO] Downloaded: ${jar_name} ($(ls -lh "${jar_path}" | awk '{print $5}'))"
         else
