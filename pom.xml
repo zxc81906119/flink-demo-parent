@@ -16,6 +16,7 @@
         <kafka.connector.version>3.1.0-1.18</kafka.connector.version>
         <jackson.version>2.15.2</jackson.version>
         <hadoop.version>3.3.6</hadoop.version>
+        <lombok.version>1.18.26</lombok.version>
     </properties>
 
     <dependencies>
@@ -84,7 +85,12 @@
             <version>${hadoop.version}</version>
             <scope>provided</scope>
         </dependency>
-
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+            <scope>provided</scope>
+        </dependency>
         <!-- SLF4J Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>

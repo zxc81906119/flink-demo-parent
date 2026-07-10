@@ -182,9 +182,9 @@ kafka-topics.sh --create \
 kafka-console-producer.sh --bootstrap-server kafka:9092 --topic credit-card-transactions
 
 # 手动输入以下 JSON（模拟同一用户连续 3 笔交易）
-{"transactionId":"TXN_001","userId":"USER_001","amount":100.0,"currency":"USD","merchantId":"M_001","timestamp":1720512345000,"cardNumber":"****1234"}
-{"transactionId":"TXN_002","userId":"USER_001","amount":200.0,"currency":"USD","merchantId":"M_002","timestamp":1720512350000,"cardNumber":"****1234"}
-{"transactionId":"TXN_003","userId":"USER_001","amount":300.0,"currency":"USD","merchantId":"M_003","timestamp":1720512355000,"cardNumber":"****1234"}
+{"transactionId":"TXN_001","userId":"USER_001","amount":100.0,"currency":"USD","merchantId":"M_001","timestamp":1721512345000,"cardNumber":"****1234"}
+{"transactionId":"TXN_002","userId":"USER_001","amount":200.0,"currency":"USD","merchantId":"M_002","timestamp":1721512350000,"cardNumber":"****1234"}
+{"transactionId":"TXN_003","userId":"USER_001","amount":300.0,"currency":"USD","merchantId":"M_003","timestamp":1721512355000,"cardNumber":"****1234"}
 ```
 
 ### 消费告警事件（示例）

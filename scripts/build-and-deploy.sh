@@ -7,6 +7,9 @@ echo "=========================================="
 echo " Flink 信用卡风控系统 - 构建部署脚本"
 echo "=========================================="
 
+
+export JAVA_HOME="c:/Users/2302022/.jdks/corretto-17.0.17"
+export PATH="$JAVA_HOME/bin:$PATH"
 # 1. 清理并编译
 echo "[1/4] 清理并编译项目..."
 mvn clean package -DskipTests

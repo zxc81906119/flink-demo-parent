@@ -16,6 +16,7 @@ KAFKA_IMAGE="docker.io/confluentinc/cp-kafka:${KAFKA_VERSION}"
 KAFKA_UI_IMAGE="docker.io/kafbat/kafka-ui:latest"
 NETWORK_NAME="flink-network"
 CONTAINER_PREFIX="flink"
+TZ="Asia/Taipei"
 
 # Hadoop 3.x Client JARs + 必要依賴 (從 Maven Central 下載)
 # hadoop-client-api    : Hadoop client 所有 API 介面
@@ -109,6 +110,7 @@ podman run -d \
     --hostname namenode \
     -p 9870:9870 \
     -p 9000:9000 \
+    -e TZ=${TZ} \
     -e HADOOP_HOME=/opt/hadoop \
     -e ENSURE_NAMENODE_DIR="/tmp/hadoop-root/dfs/name" \
     -v "${HADOOP_CONF_HOST}/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:z" \
@@ -128,6 +130,7 @@ podman run -d \
     --name "hadoop-datanode" \
     --network "${NETWORK_NAME}" \
     --hostname datanode \
+    -e TZ=${TZ} \
     -e HADOOP_HOME=/opt/hadoop \
     -v "${HADOOP_CONF_HOST}/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:z" \
     -v "${HADOOP_CONF_HOST}/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:z" \
@@ -151,9 +154,17 @@ echo "[INFO] HDFS directories created."
 # ------------------------------------------------------------------
 mkdir -p "${KAFKA_DATA_HOST}"
 
-echo "[INFO] Generating Kafka Cluster ID..."
-KAFKA_CLUSTER_ID=$(podman run --rm "${KAFKA_IMAGE}" kafka-storage random-uuid)
-echo "[INFO] Kafka Cluster ID: ${KAFKA_CLUSTER_ID}"
+# 持久化 Cluster ID：首次產生後寫入檔案，後續重啟直接讀取
+KAFKA_CLUSTER_ID_FILE="${KAFKA_DATA_HOST}/.cluster-id"
+if [ -f "${KAFKA_CLUSTER_ID_FILE}" ]; then
+    KAFKA_CLUSTER_ID=$(cat "${KAFKA_CLUSTER_ID_FILE}")
+    echo "[INFO] Reusing existing Kafka Cluster ID: ${KAFKA_CLUSTER_ID}"
+else
+    echo "[INFO] Generating new Kafka Cluster ID..."
+    KAFKA_CLUSTER_ID=$(podman run --rm "${KAFKA_IMAGE}" kafka-storage random-uuid)
+    echo "${KAFKA_CLUSTER_ID}" > "${KAFKA_CLUSTER_ID_FILE}"
+    echo "[INFO] New Kafka Cluster ID: ${KAFKA_CLUSTER_ID} (saved to ${KAFKA_CLUSTER_ID_FILE})"
+fi
 
 echo "[INFO] Starting Kafka Broker (KRaft combined mode)..."
 podman run -d \
@@ -163,6 +174,7 @@ podman run -d \
     --hostname kafka \
     -p 9092:9092 \
     -v "${KAFKA_DATA_HOST}:/var/lib/kafka/data:z" \
+    -e TZ=${TZ} \
     -e KAFKA_NODE_ID=1 \
     -e KAFKA_PROCESS_ROLES=broker,controller \
     -e KAFKA_CONTROLLER_QUORUM_VOTERS="1@kafka:9093" \
@@ -192,6 +204,7 @@ podman run -d \
     --network "${NETWORK_NAME}" \
     --hostname kafka-ui \
     -p 9080:8080 \
+    -e TZ=${TZ} \
     -e KAFKA_CLUSTERS_0_NAME=local \
     -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092 \
     "${KAFKA_UI_IMAGE}"
@@ -208,6 +221,7 @@ podman run -d \
     --network "${NETWORK_NAME}" \
     --hostname jobmanager \
     -p 8081:8081 \
+    -e TZ=${TZ} \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
     -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
     -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
@@ -221,16 +235,20 @@ echo "[INFO] JobManager started. WebUI available at http://localhost:8081"
 
 # ------------------------------------------------------------------
 # 6. 啟動 TaskManager 1 (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
+#    Remote Debug Port: 5005
 # ------------------------------------------------------------------
-echo "[INFO] Starting TaskManager 1..."
+echo "[INFO] Starting TaskManager 1 (debug port: 5005)..."
 podman run -d \
     --restart always \
     --name "${CONTAINER_PREFIX}-taskmanager-1" \
     --network "${NETWORK_NAME}" \
+    -p 5005:5005 \
+    -e TZ=${TZ} \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
-    -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2 \
+    -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=3 \
     -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
     -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
+    -e FLINK_ENV_JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
     -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
     -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
     -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
@@ -239,21 +257,25 @@ podman run -d \
 
 # ------------------------------------------------------------------
 # 7. 啟動 TaskManager 2 (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
+#    Remote Debug Port: 5006
 # ------------------------------------------------------------------
-echo "[INFO] Starting TaskManager 2..."
-podman run -d \
-    --restart always \
-    --name "${CONTAINER_PREFIX}-taskmanager-2" \
-    --network "${NETWORK_NAME}" \
-    -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
-    -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2 \
-    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
-    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
-    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
-    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
-    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
-    "${FLINK_IMAGE}" \
-    taskmanager
+#echo "[INFO] Starting TaskManager 2 (debug port: 5006)..."
+#podman run -d \
+#    --restart always \
+#    --name "${CONTAINER_PREFIX}-taskmanager-2" \
+#    --network "${NETWORK_NAME}" \
+#    -p 5006:5006 \
+#    -e TZ=${TZ} \
+#    -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
+#    -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2 \
+#    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
+#    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
+#    -e FLINK_ENV_JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006" \
+#    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
+#    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
+#    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
+#    "${FLINK_IMAGE}" \
+#    taskmanager
 
 # ------------------------------------------------------------------
 # 8. 啟動 Flink Client (掛載專案 target/ + Hadoop 設定檔 + Hadoop 3.x jars)
@@ -264,6 +286,7 @@ podman run -d \
     --restart always \
     --name "${CONTAINER_PREFIX}-client" \
     --network "${NETWORK_NAME}" \
+    -e TZ=${TZ} \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
     -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
     -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
@@ -286,6 +309,8 @@ echo " Kafka UI         : http://localhost:9080"
 echo " Kafka Data Dir   : ${KAFKA_DATA_HOST}"
 echo " JobManager WebUI : http://localhost:8081"
 echo " TaskManagers     : 2 (each with 2 task slots)"
+echo " TM-1 Debug Port  : localhost:5005"
+echo " TM-2 Debug Port  : localhost:5006"
 echo " Flink Client     : ${CONTAINER_PREFIX}-client"
 echo " Checkpoint Path  : hdfs://namenode:9000/flink/checkpoints/fraud-detection"
 echo " Hadoop Client    : hadoop-client-api + hadoop-client-runtime ${HADOOP_CLIENT_VERSION}"
@@ -300,6 +325,10 @@ echo "   podman exec kafka kafka-topics --bootstrap-server kafka:9092 --create -
 echo ""
 echo " 提交 Job 範例:"
 echo "   podman exec ${CONTAINER_PREFIX}-client flink run -m jobmanager:8081 /opt/flink/usrlib/<your-jar>.jar"
+echo ""
+echo " Remote Debug (IntelliJ):"
+echo "   Run → Edit Configurations → + → Remote JVM Debug"
+echo "   Host: localhost, Port: 5005 (TM-1) or 5006 (TM-2)"
 echo ""
 echo " 或使用 scripts/submit-job.sh <jar-filename>"
 echo "=========================================="

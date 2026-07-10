@@ -1,11 +1,15 @@
 package org.example;
 
+import lombok.extern.slf4j.Slf4j;
+import lombok.val;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.time.Time;
+import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.cep.CEP;
 import org.apache.flink.cep.PatternStream;
 import org.apache.flink.cep.functions.PatternProcessFunction;
+import org.apache.flink.cep.nfa.aftermatch.AfterMatchSkipStrategy;
 import org.apache.flink.cep.pattern.Pattern;
 import org.apache.flink.cep.pattern.conditions.SimpleCondition;
 import org.apache.flink.connector.kafka.sink.KafkaRecordSerializationSchema;
@@ -30,11 +34,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+@Slf4j
 /**
  * Apache Flink CEP 信用卡交易实时风控系统
  * <p>
  * 功能：检测同一用户在 1 分钟内严格连续发生 3 笔交易的异常行为
- * 架构：Kafka Source -> CEP 模式匹配 -> 告警去重 -> Kafka Sink
+ * 时间语意：Processing Time（使用系统处理时间，不依赖事件时间戳）
+ * 架构：Kafka Source -> CEP 模式匹配 (Processing Time) -> 告警去重 -> Kafka Sink
  * 状态后端：RocksDB
  * Checkpoint：HDFS
  */
@@ -45,7 +51,6 @@ public class Main {
     private static final String TRANSACTION_TOPIC = "credit-card-transactions";
     private static final String ALERT_TOPIC = "fraud-alerts";
     private static final String CONSUMER_GROUP = "fraud-detection-group";
-
     // HDFS Checkpoint 配置
     private static final String CHECKPOINT_PATH = "hdfs://namenode:9000/flink/checkpoints/fraud-detection";
 
@@ -81,43 +86,57 @@ public class Main {
                 3, // 最多重启 3 次
                 Time.of(10, TimeUnit.SECONDS) // 每次重启间隔 10 秒
         ));
+
+        // debug 比較好看 job 圖
+//        env.disableOperatorChaining();
+
         // 6. 创建 Kafka Source
         KafkaSource<CreditCardTransaction> kafkaSource = KafkaSource.<CreditCardTransaction>builder()
                 .setBootstrapServers(KAFKA_BOOTSTRAP_SERVERS)
                 .setTopics(TRANSACTION_TOPIC)
                 .setGroupId(CONSUMER_GROUP)
-                .setStartingOffsets(OffsetsInitializer.earliest()) // 从最早的消息开始消费
+                .setStartingOffsets(OffsetsInitializer.latest()) // 从最早的消息开始消费
                 .setValueOnlyDeserializer(new TransactionDeserializer())
                 .build();
 
-        // 7. 从 Kafka 读取交易流，并配置 Event Time 和 Watermark
-        DataStream<CreditCardTransaction> transactionStream = env
-                .fromSource(kafkaSource, WatermarkStrategy
-                                .<CreditCardTransaction>forMonotonousTimestamps()
-                                .withTimestampAssigner((event, timestamp) -> event.getTimestamp()),
-                        "Kafka Source - Credit Card Transactions")
-                .name("Transaction Source");
+        // 7. 从 Kafka 读取交易流（使用 Processing Time，不需要 Watermark）
+        DataStream<CreditCardTransaction> transactionStream = env.fromSource(
+                kafkaSource,
+                WatermarkStrategy.noWatermarks(),
+                "Kafka Source - Credit Card Transactions"
+        ).name("Transaction Source");
 
         // 8. 按用户 ID 分组
         KeyedStream<CreditCardTransaction, String> keyedStream = transactionStream
+                .filter(txn ->
+                        txn != null && txn.getUserId() != null
+                )
                 .keyBy(CreditCardTransaction::getUserId);
 
-        // 9. 定义 CEP 模式：严格连续 3 笔交易，时间窗口 1 分钟
+        keyedStream.print("Keyed Stream");
+
+
+        // 9. 定义 CEP 模式：严格连续 3 笔交易，Processing Time 窗口 1 分钟
         Pattern<CreditCardTransaction, ?> pattern = Pattern
-                .<CreditCardTransaction>begin("first")
+                .<CreditCardTransaction>begin(
+                        "first"
+                        , AfterMatchSkipStrategy.skipPastLastEvent()
+                )
                 .where(new SimpleCondition<>() {
                     @Override
                     public boolean filter(CreditCardTransaction transaction) {
-                        // 所有交易都符合条件（可以根据需要添加额外过滤条件）
-                        return transaction != null && transaction.getUserId() != null;
+                        return true;
                     }
                 })
                 .times(3)           // 连续 3 次
                 .consecutive()      // 严格连续（中间不能有其他交易）
                 .within(Duration.ofMinutes(1));
 
-        // 10. 应用 CEP 模式匹配
-        PatternStream<CreditCardTransaction> patternStream = CEP.pattern(keyedStream, pattern);
+
+        // 10. 应用 CEP 模式匹配（使用 Processing Time 语意）
+        PatternStream<CreditCardTransaction> patternStream =
+                CEP.pattern(keyedStream, pattern)
+                        .inProcessingTime();
 
         // 11. 处理匹配结果，生成告警（带去重机制）
         DataStream<FraudAlert> alertStream = patternStream.process(
@@ -163,13 +182,13 @@ public class Main {
                                 String.format("用户 %s 在 1 分钟内发生 3 笔严格连续交易，总金额: %.2f",
                                         userId, totalAmount)
                         );
-
                         // 输出告警
                         out.collect(alert);
                     }
                 }
         ).name("Fraud Alert Generator");
 
+//        alertStream.print("debug");
         // 12. 创建 Kafka Sink
         KafkaSink<FraudAlert> kafkaSink = KafkaSink.<FraudAlert>builder()
                 .setBootstrapServers(KAFKA_BOOTSTRAP_SERVERS)
@@ -178,7 +197,6 @@ public class Main {
                         .setValueSerializationSchema(new AlertSerializer())
                         .build())
                 .build();
-
         // 13. 将告警写入 Kafka
         alertStream.sinkTo(kafkaSink).name("Kafka Sink - Fraud Alerts");
 

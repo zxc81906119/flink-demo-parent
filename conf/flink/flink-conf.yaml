@@ -13,7 +13,7 @@ execution.checkpointing.timeout: 600000
 restart-strategy.fixed-delay.delay: 10s
 taskmanager.memory.flink.size: 1280m
 execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
-taskmanager.numberOfTaskSlots: 2
+taskmanager.numberOfTaskSlots: 3
 taskmanager.memory.managed.fraction: 0.4
 fs.hdfs.hadoopconf: /opt/flink/hadoop-conf
 restart-strategy: fixed-delay
