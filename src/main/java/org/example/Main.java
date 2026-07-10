@@ -101,19 +101,19 @@ public class Main {
 
         // 7. 从 Kafka 读取交易流（使用 Processing Time，不需要 Watermark）
         DataStream<CreditCardTransaction> transactionStream = env.fromSource(
-                kafkaSource,
-                WatermarkStrategy.noWatermarks(),
-                "Kafka Source - Credit Card Transactions"
-        ).name("Transaction Source");
+                        kafkaSource,
+                        WatermarkStrategy.noWatermarks(),
+                        "Kafka Source - Credit Card Transactions"
+                ).filter(txn ->
+                        txn != null && txn.getUserId() != null
+                )
+                .name("Transaction Source");
 
         // 8. 按用户 ID 分组
         KeyedStream<CreditCardTransaction, String> keyedStream = transactionStream
-                .filter(txn ->
-                        txn != null && txn.getUserId() != null
-                )
                 .keyBy(CreditCardTransaction::getUserId);
 
-        keyedStream.print("Keyed Stream");
+//        keyedStream.print("Keyed Stream");
 
 
         // 9. 定义 CEP 模式：严格连续 3 笔交易，Processing Time 窗口 1 分钟
