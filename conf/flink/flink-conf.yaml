@@ -1,24 +1,33 @@
 blob.server.port: 6124
-taskmanager.memory.process.size: 1728m
-execution.checkpointing.mode: EXACTLY_ONCE
-jobmanager.rpc.address: jobmanager
-state.backend.rocksdb.localdir: /tmp/flink-rocksdb
-restart-strategy.fixed-delay.attempts: 3
-jobmanager.memory.process.size: 1600m
-state.savepoints.dir: hdfs://namenode:9000/flink/savepoints
-jobmanager.rpc.port: 6123
 query.server.port: 6125
-execution.checkpointing.interval: 60000
-execution.checkpointing.timeout: 600000
+
+restart-strategy: fixed-delay
+restart-strategy.fixed-delay.attempts: 3
 restart-strategy.fixed-delay.delay: 10s
+
+jobmanager.rpc.port: 6123
+jobmanager.rpc.address: jobmanager
+jobmanager.memory.process.size: 1600m
+jobmanager.memory.heap.size: 1024m
+
+taskmanager.memory.process.size: 1728m
 taskmanager.memory.flink.size: 1280m
-execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
 taskmanager.numberOfTaskSlots: 2
 taskmanager.memory.managed.fraction: 0.4
-fs.hdfs.hadoopconf: /opt/flink/hadoop-conf
+
 state.backend: rocksdb
-execution.checkpointing.min-pause: 30000
-restart-strategy: fixed-delay
-execution.checkpointing.max-concurrent-checkpoints: 1
-jobmanager.memory.heap.size: 1024m
+state.backend.rocksdb.localdir: /tmp/flink-rocksdb
 state.checkpoints.dir: hdfs://namenode:9000/flink/checkpoints/fraud-detection
+
+fs.hdfs.hadoopconf: /opt/flink/hadoop-conf
+
+state.savepoints.dir: hdfs://namenode:9000/flink/savepoints
+
+execution.checkpointing.mode: EXACTLY_ONCE
+execution.checkpointing.interval: 60000
+execution.checkpointing.timeout: 600000
+execution.checkpointing.externalized-checkpoint-retention: RETAIN_ON_CANCELLATION
+execution.checkpointing.min-pause: 30000
+execution.checkpointing.max-concurrent-checkpoints: 1
+
+
