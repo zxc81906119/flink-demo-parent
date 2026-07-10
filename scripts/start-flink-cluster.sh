@@ -11,6 +11,9 @@ FLINK_VERSION="1.20.1"
 FLINK_IMAGE="docker.io/apache/flink:${FLINK_VERSION}"
 HADOOP_VERSION="3"
 HADOOP_IMAGE="docker.io/apache/hadoop:${HADOOP_VERSION}"
+KAFKA_VERSION="7.9.0"
+KAFKA_IMAGE="docker.io/confluentinc/cp-kafka:${KAFKA_VERSION}"
+KAFKA_UI_IMAGE="docker.io/kafbat/kafka-ui:latest"
 NETWORK_NAME="flink-network"
 CONTAINER_PREFIX="flink"
 
@@ -41,12 +44,16 @@ HADOOP_CONF_CONTAINER="/opt/flink/hadoop-conf"
 HADOOP_LIB_HOST="${PROJECT_DIR}/lib/hadoop"
 # Hadoop jars 在 Flink 容器內的掛載路徑
 HADOOP_LIB_CONTAINER="/opt/flink/hadoop-lib"
+# Kafka 資料持久化目錄
+KAFKA_DATA_HOST="${PROJECT_DIR}/data/kafka"
 
 echo "=========================================="
-echo " Flink Session Cluster + HDFS (Podman)"
+echo " Flink Session Cluster + HDFS + Kafka (Podman)"
 echo " Flink Version    : ${FLINK_VERSION}"
 echo " Hadoop Image     : ${HADOOP_IMAGE}"
 echo " Hadoop Client    : ${HADOOP_CLIENT_VERSION}"
+echo " Kafka Image      : ${KAFKA_IMAGE}"
+echo " Kafka UI Image   : ${KAFKA_UI_IMAGE}"
 echo " Network          : ${NETWORK_NAME}"
 echo "=========================================="
 
@@ -140,6 +147,58 @@ podman exec hadoop-namenode hdfs dfs -chmod -R 777 /flink
 echo "[INFO] HDFS directories created."
 
 # ------------------------------------------------------------------
+# 4a. 啟動 Kafka Broker (Confluent CP-Kafka, KRaft Combined Mode)
+# ------------------------------------------------------------------
+mkdir -p "${KAFKA_DATA_HOST}"
+
+echo "[INFO] Generating Kafka Cluster ID..."
+KAFKA_CLUSTER_ID=$(podman run --rm "${KAFKA_IMAGE}" kafka-storage random-uuid)
+echo "[INFO] Kafka Cluster ID: ${KAFKA_CLUSTER_ID}"
+
+echo "[INFO] Starting Kafka Broker (KRaft combined mode)..."
+podman run -d \
+    --restart always \
+    --name "kafka" \
+    --network "${NETWORK_NAME}" \
+    --hostname kafka \
+    -p 9092:9092 \
+    -v "${KAFKA_DATA_HOST}:/var/lib/kafka/data:z" \
+    -e KAFKA_NODE_ID=1 \
+    -e KAFKA_PROCESS_ROLES=broker,controller \
+    -e KAFKA_CONTROLLER_QUORUM_VOTERS="1@kafka:9093" \
+    -e KAFKA_LISTENERS="PLAINTEXT://:9092,CONTROLLER://:9093" \
+    -e KAFKA_ADVERTISED_LISTENERS="PLAINTEXT://kafka:9092" \
+    -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP="PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT" \
+    -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+    -e KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT \
+    -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+    -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+    -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+    -e KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
+    -e KAFKA_LOG_DIRS=/var/lib/kafka/data \
+    -e CLUSTER_ID="${KAFKA_CLUSTER_ID}" \
+    "${KAFKA_IMAGE}"
+
+echo "[INFO] Waiting for Kafka Broker to start (10 seconds)..."
+sleep 10
+
+# ------------------------------------------------------------------
+# 4b. 啟動 Kafka UI (kafbat/kafka-ui)
+# ------------------------------------------------------------------
+echo "[INFO] Starting Kafka UI..."
+podman run -d \
+    --restart always \
+    --name "kafka-ui" \
+    --network "${NETWORK_NAME}" \
+    --hostname kafka-ui \
+    -p 9080:8080 \
+    -e KAFKA_CLUSTERS_0_NAME=local \
+    -e KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092 \
+    "${KAFKA_UI_IMAGE}"
+
+echo "[INFO] Kafka UI started. WebUI available at http://localhost:9080"
+
+# ------------------------------------------------------------------
 # 5. 啟動 JobManager (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
 # ------------------------------------------------------------------
 echo "[INFO] Starting JobManager..."
@@ -217,11 +276,14 @@ podman run -d \
 
 echo ""
 echo "=========================================="
-echo " Flink Session Cluster + HDFS is UP!"
+echo " Flink Session Cluster + HDFS + Kafka is UP!"
 echo "=========================================="
 echo ""
 echo " HDFS NameNode    : http://localhost:9870"
 echo " HDFS RPC         : hdfs://namenode:9000"
+echo " Kafka Bootstrap  : localhost:9092 (internal: kafka:9092)"
+echo " Kafka UI         : http://localhost:9080"
+echo " Kafka Data Dir   : ${KAFKA_DATA_HOST}"
 echo " JobManager WebUI : http://localhost:8081"
 echo " TaskManagers     : 2 (each with 2 task slots)"
 echo " Flink Client     : ${CONTAINER_PREFIX}-client"
@@ -231,6 +293,10 @@ echo ""
 echo " 驗證 HDFS 狀態:"
 echo "   podman exec hadoop-namenode hdfs dfsadmin -report"
 echo "   podman exec hadoop-namenode hdfs dfs -ls /flink/checkpoints"
+echo ""
+echo " 驗證 Kafka 狀態:"
+echo "   podman exec kafka kafka-topics --bootstrap-server kafka:9092 --list"
+echo "   podman exec kafka kafka-topics --bootstrap-server kafka:9092 --create --topic test --partitions 1 --replication-factor 1"
 echo ""
 echo " 提交 Job 範例:"
 echo "   podman exec ${CONTAINER_PREFIX}-client flink run -m jobmanager:8081 /opt/flink/usrlib/<your-jar>.jar"

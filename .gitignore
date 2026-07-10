@@ -34,3 +34,7 @@ build/
 
 ### Hadoop Bundle JAR (downloaded at runtime) ###
 lib/hadoop/
+
+### Kafka persistent data ###
+data/
+
