@@ -1,11 +1,9 @@
 package org.example;
 
 import lombok.extern.slf4j.Slf4j;
-import lombok.val;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.restartstrategy.RestartStrategies;
 import org.apache.flink.api.common.time.Time;
-import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.cep.CEP;
 import org.apache.flink.cep.PatternStream;
 import org.apache.flink.cep.functions.PatternProcessFunction;
@@ -35,15 +33,6 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Slf4j
-/**
- * Apache Flink CEP 信用卡交易实时风控系统
- * <p>
- * 功能：检测同一用户在 1 分钟内严格连续发生 3 笔交易的异常行为
- * 时间语意：Processing Time（使用系统处理时间，不依赖事件时间戳）
- * 架构：Kafka Source -> CEP 模式匹配 (Processing Time) -> 告警去重 -> Kafka Sink
- * 状态后端：RocksDB
- * Checkpoint：HDFS
- */
 public class Main {
 
     // Kafka 配置

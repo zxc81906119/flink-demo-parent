@@ -15,7 +15,7 @@ public class AlertSerializer implements SerializationSchema<FraudAlert> {
     private transient ObjectMapper objectMapper;
 
     @Override
-    public void open(InitializationContext context) throws Exception {
+    public void open(InitializationContext context) {
         objectMapper = JsonMapper.builder().build();
     }
 
@@ -29,7 +29,6 @@ public class AlertSerializer implements SerializationSchema<FraudAlert> {
             return objectMapper.writeValueAsBytes(alert);
         } catch (Exception e) {
             System.err.println("Failed to serialize alert: " + alert);
-            e.printStackTrace();
             return new byte[0];
         }
     }
