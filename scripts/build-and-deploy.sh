@@ -23,6 +23,7 @@ ls -lh target/untitled1-1.0-SNAPSHOT.jar
 # 3. 检查 Flink 集群是否运行
 echo ""
 echo "[2/4] 检查 Flink 集群状态..."
+export MSYS_NO_PATHCONV=1
 if ! podman container exists flink-jobmanager 2>/dev/null; then
     echo "[WARNING] Flink 集群未运行，正在启动..."
     bash scripts/start-flink-cluster.sh
