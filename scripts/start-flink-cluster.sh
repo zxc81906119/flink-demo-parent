@@ -4,22 +4,81 @@ set -euo pipefail
 ##############################################################################
 # Apache Flink Session Cluster — Podman 啟動腳本
 # Flink LTS Version: 1.20.1
-# 架構: 1 JobManager + 2 TaskManagers + 1 Flink Client
+# 架構: 1 HDFS NameNode + 1 DataNode + 1 JobManager + 2 TaskManagers + 1 Flink Client
 ##############################################################################
 
 FLINK_VERSION="1.20.1"
 FLINK_IMAGE="docker.io/apache/flink:${FLINK_VERSION}"
+HADOOP_VERSION="3"
+HADOOP_IMAGE="docker.io/apache/hadoop:${HADOOP_VERSION}"
 NETWORK_NAME="flink-network"
 CONTAINER_PREFIX="flink"
+
+# Hadoop 3.x Client JARs (從 Maven Central 下載)
+# hadoop-client-api    : Hadoop client 所有 API 介面
+# hadoop-client-runtime: 執行時期 uber-jar（已 shaded，不與 Flink 衝突）
+HADOOP_CLIENT_VERSION="3.3.6"
+HADOOP_JARS=(
+    "hadoop-client-api-${HADOOP_CLIENT_VERSION}.jar"
+    "hadoop-client-runtime-${HADOOP_CLIENT_VERSION}.jar"
+)
+MAVEN_BASE_URL="https://repo1.maven.org/maven2/org/apache/hadoop"
 
 # 專案根目錄 (腳本位於 scripts/ 下)
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
+# Hadoop 設定檔目錄
+HADOOP_CONF_HOST="${PROJECT_DIR}/conf/hadoop"
+# Flink 設定檔目錄
+FLINK_CONF_HOST="${PROJECT_DIR}/conf/flink"
+# Hadoop 設定檔在容器內的掛載路徑
+HADOOP_CONF_CONTAINER="/opt/flink/hadoop-conf"
+# Hadoop jars 本地存放目錄
+HADOOP_LIB_HOST="${PROJECT_DIR}/lib/hadoop"
+# Hadoop jars 在 Flink 容器內的掛載路徑
+HADOOP_LIB_CONTAINER="/opt/flink/hadoop-lib"
+
 echo "=========================================="
-echo " Flink Session Cluster (Podman)"
-echo " Flink Version : ${FLINK_VERSION}"
-echo " Network       : ${NETWORK_NAME}"
+echo " Flink Session Cluster + HDFS (Podman)"
+echo " Flink Version    : ${FLINK_VERSION}"
+echo " Hadoop Image     : ${HADOOP_IMAGE}"
+echo " Hadoop Client    : ${HADOOP_CLIENT_VERSION}"
+echo " Network          : ${NETWORK_NAME}"
 echo "=========================================="
+
+# ------------------------------------------------------------------
+# 0. 從 Maven Central 下載 Hadoop 3.x Client JARs (若不存在)
+#    Hadoop 3.x 官方提供 hadoop-client-api + hadoop-client-runtime
+#    兩個 uber-jar 即可提供完整的 HDFS client 支援
+# ------------------------------------------------------------------
+mkdir -p "${HADOOP_LIB_HOST}"
+echo "[INFO] Checking Hadoop client jars..."
+for jar_name in "${HADOOP_JARS[@]}"; do
+    jar_path="${HADOOP_LIB_HOST}/${jar_name}"
+    if [ ! -f "${jar_path}" ]; then
+        # 從 jar 名稱推導 artifactId (去掉版本號)
+        artifact_id="${jar_name%-${HADOOP_CLIENT_VERSION}.jar}"
+        download_url="${MAVEN_BASE_URL}/${artifact_id}/${HADOOP_CLIENT_VERSION}/${jar_name}"
+        echo "[INFO] Downloading ${jar_name} from Maven Central..."
+        echo "       URL: ${download_url}"
+        # 使用 pushd + 相對路徑避免 Windows MSYS 路徑轉換問題
+        pushd "${HADOOP_LIB_HOST}" > /dev/null
+        curl -fSL -o "${jar_name}" "${download_url}"
+        popd > /dev/null
+        if [ -f "${jar_path}" ]; then
+            echo "[INFO] Downloaded: ${jar_name} ($(ls -lh "${jar_path}" | awk '{print $5}'))"
+        else
+            echo "[ERROR] Failed to download ${jar_name}!"
+            echo "[ERROR] Please manually download from: ${download_url}"
+            echo "[ERROR] And place it in: ${HADOOP_LIB_HOST}/"
+            exit 1
+        fi
+    else
+        echo "[INFO] Already exists: ${jar_name}"
+    fi
+done
+
+export MSYS_NO_PATHCONV=1
 
 # ------------------------------------------------------------------
 # 1. 建立 Podman Network (若不存在)
@@ -32,71 +91,148 @@ else
 fi
 
 # ------------------------------------------------------------------
-# 2. 啟動 JobManager
+# 2. 啟動 Hadoop HDFS — NameNode
+# ------------------------------------------------------------------
+echo "[INFO] Starting HDFS NameNode..."
+podman run -d \
+    --restart always \
+    --name "hadoop-namenode" \
+    --network "${NETWORK_NAME}" \
+    --hostname namenode \
+    -p 9870:9870 \
+    -p 9000:9000 \
+    -e HADOOP_HOME=/opt/hadoop \
+    -e ENSURE_NAMENODE_DIR="/tmp/hadoop-root/dfs/name" \
+    -v "${HADOOP_CONF_HOST}/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:z" \
+    -v "${HADOOP_CONF_HOST}/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:z" \
+    "${HADOOP_IMAGE}" \
+    hdfs namenode
+
+echo "[INFO] Waiting for NameNode to start (15 seconds)..."
+sleep 15
+
+# ------------------------------------------------------------------
+# 3. 啟動 Hadoop HDFS — DataNode
+# ------------------------------------------------------------------
+echo "[INFO] Starting HDFS DataNode..."
+podman run -d \
+    --restart always \
+    --name "hadoop-datanode" \
+    --network "${NETWORK_NAME}" \
+    --hostname datanode \
+    -e HADOOP_HOME=/opt/hadoop \
+    -v "${HADOOP_CONF_HOST}/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml:z" \
+    -v "${HADOOP_CONF_HOST}/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml:z" \
+    "${HADOOP_IMAGE}" \
+    hdfs datanode
+
+echo "[INFO] Waiting for DataNode to register (10 seconds)..."
+sleep 10
+
+# ------------------------------------------------------------------
+# 4. 在 HDFS 上建立 Flink checkpoint / savepoint 目錄
+# ------------------------------------------------------------------
+echo "[INFO] Creating HDFS directories for Flink checkpoints..."
+podman exec hadoop-namenode hdfs dfs -mkdir -p /flink/checkpoints/fraud-detection
+podman exec hadoop-namenode hdfs dfs -mkdir -p /flink/savepoints
+podman exec hadoop-namenode hdfs dfs -chmod -R 777 /flink
+echo "[INFO] HDFS directories created."
+
+# ------------------------------------------------------------------
+# 5. 啟動 JobManager (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
 # ------------------------------------------------------------------
 echo "[INFO] Starting JobManager..."
 podman run -d \
+    --restart always \
     --name "${CONTAINER_PREFIX}-jobmanager" \
     --network "${NETWORK_NAME}" \
     --hostname jobmanager \
     -p 8081:8081 \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
+    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
+    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
+    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
+    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
+    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
     "${FLINK_IMAGE}" \
     jobmanager
 
 echo "[INFO] JobManager started. WebUI available at http://localhost:8081"
 
 # ------------------------------------------------------------------
-# 3. 啟動 TaskManager 1
+# 6. 啟動 TaskManager 1 (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
 # ------------------------------------------------------------------
 echo "[INFO] Starting TaskManager 1..."
 podman run -d \
+    --restart always \
     --name "${CONTAINER_PREFIX}-taskmanager-1" \
     --network "${NETWORK_NAME}" \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
     -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2 \
+    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
+    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
+    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
+    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
+    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
     "${FLINK_IMAGE}" \
     taskmanager
 
 # ------------------------------------------------------------------
-# 4. 啟動 TaskManager 2
+# 7. 啟動 TaskManager 2 (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
 # ------------------------------------------------------------------
 echo "[INFO] Starting TaskManager 2..."
 podman run -d \
+    --restart always \
     --name "${CONTAINER_PREFIX}-taskmanager-2" \
     --network "${NETWORK_NAME}" \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
     -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2 \
+    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
+    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
+    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
+    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
+    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
     "${FLINK_IMAGE}" \
     taskmanager
 
 # ------------------------------------------------------------------
-# 7. 啟動 Flink Client (掛載專案 target/ 目錄)
+# 8. 啟動 Flink Client (掛載專案 target/ + Hadoop 設定檔 + Hadoop 3.x jars)
 #    容器保持執行狀態，使用者可透過 podman exec 進入提交 job
 # ------------------------------------------------------------------
 echo "[INFO] Starting Flink Client..."
 podman run -d \
+    --restart always \
     --name "${CONTAINER_PREFIX}-client" \
     --network "${NETWORK_NAME}" \
     -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
-    -e HADOOP_CONF_DIR=/opt/flink/conf \
+    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
+    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
     -v "${PROJECT_DIR}/target:/opt/flink/usrlib:z" \
+    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
+    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
+    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
     "${FLINK_IMAGE}" \
     sleep infinity
 
 echo ""
 echo "=========================================="
-echo " Flink Session Cluster is UP!"
+echo " Flink Session Cluster + HDFS is UP!"
 echo "=========================================="
 echo ""
 echo " HDFS NameNode    : http://localhost:9870"
+echo " HDFS RPC         : hdfs://namenode:9000"
 echo " JobManager WebUI : http://localhost:8081"
 echo " TaskManagers     : 2 (each with 2 task slots)"
 echo " Flink Client     : ${CONTAINER_PREFIX}-client"
+echo " Checkpoint Path  : hdfs://namenode:9000/flink/checkpoints/fraud-detection"
+echo " Hadoop Client    : hadoop-client-api + hadoop-client-runtime ${HADOOP_CLIENT_VERSION}"
+echo ""
+echo " 驗證 HDFS 狀態:"
+echo "   podman exec hadoop-namenode hdfs dfsadmin -report"
+echo "   podman exec hadoop-namenode hdfs dfs -ls /flink/checkpoints"
 echo ""
 echo " 提交 Job 範例:"
 echo "   podman exec ${CONTAINER_PREFIX}-client flink run -m jobmanager:8081 /opt/flink/usrlib/<your-jar>.jar"
 echo ""
 echo " 或使用 scripts/submit-job.sh <jar-filename>"
 echo "=========================================="
-

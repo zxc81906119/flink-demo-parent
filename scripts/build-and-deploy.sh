@@ -33,6 +33,23 @@ else
     echo "[INFO] Flink 集群已在运行"
 fi
 
+# 3.5 检查 HDFS 是否运行
+echo ""
+echo "[2.5/4] 检查 HDFS 状态..."
+if ! podman container exists hadoop-namenode 2>/dev/null; then
+    echo "[ERROR] HDFS NameNode 未运行！请先执行 scripts/start-flink-cluster.sh"
+    exit 1
+else
+    echo "[INFO] HDFS NameNode 已在运行"
+    # 验证 HDFS 健康状态
+    if podman exec hadoop-namenode hdfs dfsadmin -safemode get 2>/dev/null | grep -q "OFF"; then
+        echo "[INFO] HDFS 已离开安全模式，状态正常"
+    else
+        echo "[WARNING] HDFS 可能仍在安全模式中，等待 10 秒..."
+        sleep 10
+    fi
+fi
+
 # 4. 提交 Job
 echo ""
 echo "[3/4] 提交 Flink Job..."

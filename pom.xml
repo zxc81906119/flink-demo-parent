@@ -15,7 +15,7 @@
         <flink.version>1.20.1</flink.version>
         <kafka.connector.version>3.1.0-1.18</kafka.connector.version>
         <jackson.version>2.15.2</jackson.version>
-        <hadoop.version>3.2.1</hadoop.version>
+        <hadoop.version>3.3.6</hadoop.version>
     </properties>
 
     <dependencies>
@@ -68,10 +68,19 @@
             <version>${jackson.version}</version>
         </dependency>
 
-        <!-- Hadoop Client for HDFS checkpoint storage -->
+        <!-- Hadoop 3.x Client for HDFS checkpoint storage
+             使用 provided scope：實際 JAR 由啟動腳本從 Maven Central 下載
+             並透過 HADOOP_CLASSPATH 掛載到 Flink 容器的 classpath -->
         <dependency>
             <groupId>org.apache.hadoop</groupId>
-            <artifactId>hadoop-client</artifactId>
+            <artifactId>hadoop-client-api</artifactId>
+            <version>${hadoop.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client-runtime</artifactId>
             <version>${hadoop.version}</version>
             <scope>provided</scope>
         </dependency>

@@ -69,8 +69,14 @@
     </dependency>
     <dependency>
       <groupId>org.apache.hadoop</groupId>
-      <artifactId>hadoop-client</artifactId>
-      <version>3.2.1</version>
+      <artifactId>hadoop-client-api</artifactId>
+      <version>3.3.6</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-client-runtime</artifactId>
+      <version>3.3.6</version>
       <scope>provided</scope>
     </dependency>
     <dependency>
@@ -85,7 +91,7 @@
     <kafka.connector.version>3.1.0-1.18</kafka.connector.version>
     <jackson.version>2.15.2</jackson.version>
     <flink.version>1.20.1</flink.version>
-    <hadoop.version>3.2.1</hadoop.version>
+    <hadoop.version>3.3.6</hadoop.version>
     <maven.compiler.target>11</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
