@@ -16,8 +16,10 @@
         <kafka.connector.version>3.1.0-1.18</kafka.connector.version>
         <jackson.version>2.15.2</jackson.version>
         <hadoop.version>3.3.6</hadoop.version>
-        <lombok.version>1.18.26</lombok.version>
+        <lombok.version>1.18.32</lombok.version>
         <slf4j-api.version>1.7.36</slf4j-api.version>
+        <drools.version>10.2.0</drools.version>
+        <postgresql.version>42.7.4</postgresql.version>
     </properties>
 
 
@@ -88,6 +90,22 @@
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <scope>provided</scope>
+        </dependency>
+
+        <!-- Drools 10 Embedded Rule Engine (決策表 Excel 支援) -->
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-mvel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-decisiontables</artifactId>
+        </dependency>
+
+        <!-- PostgreSQL JDBC Driver：查詢信用卡當月額度上限 -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
         </dependency>
     </dependencies>
 
@@ -164,6 +182,25 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j-api.version}</version>
+            </dependency>
+
+            <!-- Drools 10 Embedded Rule Engine -->
+            <dependency>
+                <groupId>org.drools</groupId>
+                <artifactId>drools-mvel</artifactId>
+                <version>${drools.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.drools</groupId>
+                <artifactId>drools-decisiontables</artifactId>
+                <version>${drools.version}</version>
+            </dependency>
+
+            <!-- PostgreSQL JDBC Driver -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${postgresql.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
