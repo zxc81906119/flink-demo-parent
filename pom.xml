@@ -20,6 +20,7 @@
         <slf4j-api.version>1.7.36</slf4j-api.version>
         <drools.version>10.2.0</drools.version>
         <postgresql.version>42.7.4</postgresql.version>
+        <junit.version>5.10.2</junit.version>
     </properties>
 
 
@@ -106,6 +107,13 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- JUnit 5：規則引擎單元測試 -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -202,6 +210,22 @@
                 <artifactId>postgresql</artifactId>
                 <version>${postgresql.version}</version>
             </dependency>
+
+            <!-- 強制指定 commons-io 版本：Apache POI 5.x（Drools 決策表 xlsx 解析依賴）
+                 需要 BoundedInputStream.Builder，舊版 commons-io（由其他依賴帶入）不含此 API -->
+            <dependency>
+                <groupId>commons-io</groupId>
+                <artifactId>commons-io</artifactId>
+                <version>2.16.1</version>
+            </dependency>
+
+            <!-- JUnit 5 BOM -->
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>${junit.version}</version>
+                <scope>test</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -215,6 +239,12 @@
                     <source>11</source>
                     <target>11</target>
                 </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
             </plugin>
 
             <!-- Maven Shade Plugin for creating uber-jar -->
