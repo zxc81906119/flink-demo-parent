@@ -225,6 +225,13 @@ echo "[INFO] Kafka UI started. WebUI available at http://localhost:9080"
 #     使用官方 init sql 機制：掛載 conf/postgres/init 至
 #     /docker-entrypoint-initdb.d，容器首次啟動（資料目錄為空）時
 #     會依檔名順序自動執行其中的 DDL / DML sql
+#
+#     額外開啟 WAL 邏輯複製 (wal_level=logical)，供 Flink CDC
+#     (flink-connector-postgres-cdc) 透過 pgoutput plugin 即時捕捉
+#     card_limit 表的異動（INSERT/UPDATE/DELETE），無需額外安裝擴充套件。
+#     init sql 內會賦予 ${POSTGRES_USER} REPLICATION 權限、並將
+#     card_limit 表的 REPLICA IDENTITY 設為 FULL（確保 UPDATE/DELETE
+#     事件攜帶完整欄位值）。
 # ------------------------------------------------------------------
 mkdir -p "${POSTGRES_DATA_HOST}"
 
@@ -241,11 +248,15 @@ podman run -d \
     -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD} \
     -v "${POSTGRES_DATA_HOST}:/var/lib/postgresql/data:z" \
     -v "${POSTGRES_INIT_HOST}:/docker-entrypoint-initdb.d:z" \
-    "${POSTGRES_IMAGE}"
+    "${POSTGRES_IMAGE}" \
+    -c wal_level=logical \
+    -c max_replication_slots=4 \
+    -c max_wal_senders=4
 
 echo "[INFO] Waiting for PostgreSQL to initialize (10 seconds)..."
 sleep 10
 echo "[INFO] PostgreSQL started. JDBC URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
+echo "[INFO] PostgreSQL logical replication enabled (wal_level=logical), ready for Flink CDC."
 
 # ------------------------------------------------------------------
 # 5. 啟動 JobManager (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
@@ -363,6 +374,8 @@ echo "   podman exec kafka kafka-topics --bootstrap-server kafka:9092 --create -
 echo ""
 echo " 驗證 PostgreSQL 狀態:"
 echo "   podman exec postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT * FROM card_limit;'"
+echo "   podman exec postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SHOW wal_level;'"
+echo "   podman exec postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT * FROM pg_replication_slots;'"
 echo ""
 echo " 提交 Job 範例:"
 echo "   podman exec ${CONTAINER_PREFIX}-client flink run -m jobmanager:8081 /opt/flink/usrlib/<your-jar>.jar"
