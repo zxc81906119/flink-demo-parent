@@ -251,13 +251,14 @@ untitled1/
     └── monthly/                              # Job 2：每月消费统计 + 额度分级
         ├── MonthlyCreditLevelJob.java        # Job 入口
         ├── model/
-        │   └── MonthlyConsumptionFact.java   # Drools input/output 共用 fact
-        ├── repository/
-        │   └── CardLimitRepository.java      # PostgreSQL 额度上限查询（含快取）
+        │   ├── MonthlyConsumptionFact.java   # Drools input/output 共用 fact
+        │   └── CardLimitUpdate.java          # card_limit CDC 變更事件（upsert/delete）
+        ├── cdc/
+        │   └── CardLimitDebeziumDeserializer.java # Debezium SourceRecord -> CardLimitUpdate
         ├── rule/
         │   └── CardLevelRuleEngine.java      # Drools KieBase/KieSession 封装
         ├── process/
-        │   └── MonthlyAggregationFunction.java # 每月累加 + 月结触发规则引擎
+        │   └── MonthlyAggregationFunction.java # 每月累加 + broadcast state join + 月结触发规则引擎
         └── serialization/
             └── LevelResultSerializer.java    # 分级结果 Kafka 序列化器
 ```
@@ -332,24 +333,41 @@ untitled1/
 ### 系统架构
 
 ```
-Kafka (credit-card-transactions)          PostgreSQL (card_limit 表)
-          ↓                                         ↓
-   依 cardNumber 分组                                │
-   即时累加当月消费金额（仅 log，不立即输出）              │
-          ↓ 处理时间跨月触发 timer                     │
-   查询该卡当月额度上限 ─────────────────────────────────┘
-          ↓
-   Drools 决策表规则引擎（CardLevelRules.xlsx）
-   计算 status / description
-          ↓
-Kafka (credit-card-level-results)
+Kafka (credit-card-transactions)          PostgreSQL (card_limit 表, wal_level=logical)
+          ↓                                         ↓ WAL 邏輯複製 (pgoutput)
+   依 cardNumber 分组                       Flink CDC (flink-connector-postgres-cdc)
+   即时累加当月消费金额（仅 log，不立即输出）      ↓ CardLimitDebeziumDeserializer
+          ↓ 处理时间跨月触发 timer           CardLimitUpdate（upsert / delete）
+          │                                         ↓ broadcast
+          └──────────── KeyedBroadcastProcessFunction ┘
+                  （broadcast state 中 materialize 成「額度上限表」）
+                          ↓
+                Drools 决策表规则引擎（CardLevelRules.xlsx）
+                计算 status / description
+                          ↓
+                Kafka (credit-card-level-results)
 ```
 
 - **数据来源**：与 `Main.java` 完全相同的 Kafka topic（`credit-card-transactions`）与 `CreditCardTransaction` 资料结构，`Deserializer` 亦沿用 `TransactionDeserializer`。
-- **聚合逻辑**：`MonthlyAggregationFunction`（`KeyedProcessFunction`，依 `cardNumber` 分组）在 Flink State 中累加当月金额，每笔交易到达时更新并记录 log；使用处理时间 timer，在下个月开始时触发月结运算。
-- **额度查询**：`CardLimitRepository` 透过 JDBC 查询 PostgreSQL `card_limit` 表（以卡号为主键），并有简单快取；查无资料时以预设额度 100000 处理。
+- **聚合逻辑**：`MonthlyAggregationFunction`（`KeyedBroadcastProcessFunction`，依 `cardNumber` 分组）在 Flink State 中累加当月金额，每笔交易到达时更新并记录 log；使用处理时间 timer，在下个月开始时触发月结运算。
+- **额度上限 enrichment（stream + table，Postgres CDC 版）**：不使用逐笔 JDBC 查询，改以 **Flink CDC**（`flink-connector-postgres-cdc`）透过 PostgreSQL **WAL 逻辑复制**（`pgoutput` plugin，PostgreSQL 内建、无需额外安装）即时捕捉 `card_limit` 表的 INSERT / UPDATE / DELETE。CDC 事件经 `CardLimitDebeziumDeserializer` 转换为 `CardLimitUpdate`（含 upsert / delete 语意），再以 broadcast stream 广播给每个 keyed 分区，在 `MonthlyAggregationFunction` 的本地 broadcast state 中 materialize 成一张「额度上限表」，供每次月结时查询。此设计概念上对应 **ksqlDB 的 stream + table join**（card_limit 的 changelog 被同步成本地 KTable），相较定期轮询或逐笔 JDBC 查询：
+  - 額度變更為**毫秒級即時同步**，且對 PostgreSQL 幾乎零額外查詢負載（讀取 WAL，而非執行 SELECT）
+  - CDC 事件本身即為 changelog，天然具備**異動留痕／可追溯性**，較符合金融業對參考資料異動的稽核要求
+  - 啟動時 CDC 會先做一次全表 snapshot（`StartupOptions.initial()`），之後無縫切換到持續監聽 WAL，故不需另外撰寫輪詢邏輯
 - **规则引擎**：`CardLevelRuleEngine` 使用 Drools 10（`drools-mvel` + `drools-decisiontables`，embedded 方式以 Maven 引入）载入 `src/main/resources/rules/CardLevelRules.xlsx` 决策表；Fact 物件 `MonthlyConsumptionFact` 同时作为规则的 input（`monthlyAmount`、`cardLimit`）与 output（`status`、`description`），不额外拆分物件。
 - **输出**：分级结果以 JSON 序列化（`LevelResultSerializer`），输出到新 Kafka topic `credit-card-level-results`。
+
+### Enrichment 方案比较（为何选择 Postgres CDC）
+
+在设计階段曾比較三種額度上限 enrichment 方式：
+
+| 方案 | 即時性 | 對來源庫負載 | 稽核／留痕 | 適用場景 |
+|---|---|---|---|---|
+| **A. Postgres CDC（採用）** | 毫秒級 | 低（讀 WAL） | 佳（天然 changelog） | 金融業標準做法，額度等參考資料需要即時性與異動留痕 |
+| B. 定期輪詢全表 + Broadcast State | 輪詢間隔級 | 中（週期性全表 SELECT） | 弱 | 資源有限、可接受分鐘級延遲的 PoC/MVP |
+| C. Flink SQL JDBC Lookup Join | 快取 TTL 級 | 中低 | 弱 | 高基數、依 key 各自查詢的場景（如商戶資訊），非本情境最佳選擇 |
+
+考量本專案的額度上限資料屬於金融業常見的低頻但關鍵參考資料（變更需可追溯、正確性要求高），最終選擇方案 A（Postgres CDC）。
 
 ### 决策表规则（CardLevelRules.xlsx）
 
@@ -364,17 +382,27 @@ Kafka (credit-card-level-results)
 
 规则以 Excel 决策表撰写，可直接修改 `CardLevelRules.xlsx` 中的数据行调整门槛，无需改动 Java 代码；修改后请以 `mvn test -Dtest=CardLevelRuleEngineTest` 验证各分支仍正确命中。
 
-### PostgreSQL（card_limit 表）
+### PostgreSQL（card_limit 表 + WAL 邏輯複製）
 
-`scripts/start-flink-cluster.sh` 已加入 PostgreSQL（版本 17，podman 启动，与 Flink 集群同一个 network）；容器启动时会自动挂载 `conf/postgres/init/` 下的 SQL 建立资料：
+`scripts/start-flink-cluster.sh` 已加入 PostgreSQL（版本 17，podman 启动，与 Flink 集群同一个 network），并已開啟 **WAL 邏輯複製**（`wal_level=logical`、`max_replication_slots=4`、`max_wal_senders=4`），供 Flink CDC 使用；容器启动时会自动挂载 `conf/postgres/init/` 下的 SQL 建立资料：
 
-- `01-ddl.sql`：建立 `card_limit` 表（`card_number` 为主键、`credit_limit` 为该卡当月额度上限）。
+- `01-ddl.sql`：建立 `card_limit` 表（`card_number` 为主键、`credit_limit` 为该卡当月额度上限），並設定 `REPLICA IDENTITY FULL`（確保 UPDATE/DELETE 的 WAL 紀錄攜帶完整欄位值）與賦予使用者 `REPLICATION` 權限。
 - `02-dml.sql`：写入测试资料，包含与本 README 交易范例相同的卡号（如 `****1234`），以及一批随机产生的卡号与额度上限，供各分级规则分支测试使用。
 
-连线参数（`MonthlyCreditLevelJob` 中设定，如需调整请同步修改 `scripts/start-flink-cluster.sh`）：
+CDC 連線參數（`MonthlyCreditLevelJob` 中設定，如需調整請同步修改 `scripts/start-flink-cluster.sh`）：
 
-- JDBC URL：`jdbc:postgresql://postgres:5432/carddb`
+- Host/Port：`postgres:5432`，Database：`carddb`，Table：`public.card_limit`
 - 使用者/密码：`carduser` / `cardpass`
+- Decoding Plugin：`pgoutput`（PostgreSQL 內建，無需額外安裝 wal2json 等擴充套件）
+- Replication Slot：`monthly_card_level_slot`
+- Startup Mode：`StartupOptions.initial()`（啟動時先做一次全表 snapshot，之後接續監聽 WAL）
+
+验证邏輯複製是否已啟用：
+
+```bash
+podman exec postgres psql -U carduser -d carddb -c 'SHOW wal_level;'
+podman exec postgres psql -U carduser -d carddb -c 'SELECT * FROM pg_replication_slots;'
+```
 
 ### 运行方式
 
@@ -402,11 +430,14 @@ kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic credit-card-leve
 ### 单元测试
 
 - `CardLevelRuleEngineTest`：验证决策表 5 种分级（status 1~5）各分支皆正确命中。
-- `MonthlyAggregationFunctionTest`：验证月结前不输出、跨月后才输出正确的分级结果。
+- `CardLimitDebeziumDeserializerTest`：驗證 Debezium change event（insert/update/delete/初始 snapshot）皆能正確轉換為 `CardLimitUpdate`。
+- `MonthlyAggregationFunctionTest`：验证月结前不输出、broadcast state upsert/delete 後的額度上限查詢結果、跨月后才输出正确的分级结果。
 
 ```bash
 mvn test
 ```
+
+> **測試限制說明**：本專案開發環境無 Docker/Testcontainers 可用，因此無法針對 Flink CDC 做端對端整合測試（例如啟動一個具備 WAL 邏輯複製的 PostgreSQL 容器，驗證 `MonthlyCreditLevelJob` 從真實 CDC 事件到 Kafka 輸出的完整流程）。上述單元測試僅涵蓋 CDC 轉換邏輯與下游 broadcast state 處理邏輯本身；正式導入前，建議在具備 Docker 的環境依照 `scripts/start-flink-cluster.sh` 啟動完整叢集，手動驗證 `card_limit` 表異動能即時反映到分級結果。
 
 ## 许可证
 
