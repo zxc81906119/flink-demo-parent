@@ -21,6 +21,7 @@
         <drools.version>10.2.0</drools.version>
         <postgresql.version>42.7.4</postgresql.version>
         <junit.version>5.10.2</junit.version>
+        <flink-cdc.version>3.6.0-1.20</flink-cdc.version>
     </properties>
 
 
@@ -107,6 +108,13 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
+        </dependency>
+
+        <!-- Flink CDC (Postgres)：以 WAL 邏輯複製即時捕捉 card_limit 表異動，
+             取代逐筆 JDBC 查詢的 enrichment 方式（stream + table 概念） -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-postgres-cdc</artifactId>
         </dependency>
 
         <!-- JUnit 5：規則引擎單元測試 -->
@@ -222,6 +230,13 @@
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
                 <version>${postgresql.version}</version>
+            </dependency>
+
+            <!-- Flink CDC (Postgres) -->
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-connector-postgres-cdc</artifactId>
+                <version>${flink-cdc.version}</version>
             </dependency>
 
             <!-- 強制指定 commons-io 版本：Apache POI 5.x（Drools 決策表 xlsx 解析依賴）
