@@ -14,6 +14,11 @@ HADOOP_IMAGE="docker.io/apache/hadoop:${HADOOP_VERSION}"
 KAFKA_VERSION="7.9.0"
 KAFKA_IMAGE="docker.io/confluentinc/cp-kafka:${KAFKA_VERSION}"
 KAFKA_UI_IMAGE="docker.io/kafbat/kafka-ui:latest"
+POSTGRES_VERSION="17"
+POSTGRES_IMAGE="docker.io/library/postgres:${POSTGRES_VERSION}"
+POSTGRES_DB="carddb"
+POSTGRES_USER="carduser"
+POSTGRES_PASSWORD="cardpass"
 NETWORK_NAME="flink-network"
 CONTAINER_PREFIX="flink"
 TZ="Asia/Taipei"
@@ -47,6 +52,9 @@ HADOOP_LIB_HOST="${PROJECT_DIR}/lib/hadoop"
 HADOOP_LIB_CONTAINER="/opt/flink/hadoop-lib"
 # Kafka 資料持久化目錄
 KAFKA_DATA_HOST="${PROJECT_DIR}/data/kafka"
+# PostgreSQL 資料持久化目錄 + init sql 目錄
+POSTGRES_DATA_HOST="${PROJECT_DIR}/data/postgres"
+POSTGRES_INIT_HOST="${PROJECT_DIR}/conf/postgres/init"
 
 echo "=========================================="
 echo " Flink Session Cluster + HDFS + Kafka (Podman)"
@@ -55,6 +63,7 @@ echo " Hadoop Image     : ${HADOOP_IMAGE}"
 echo " Hadoop Client    : ${HADOOP_CLIENT_VERSION}"
 echo " Kafka Image      : ${KAFKA_IMAGE}"
 echo " Kafka UI Image   : ${KAFKA_UI_IMAGE}"
+echo " Postgres Image   : ${POSTGRES_IMAGE}"
 echo " Network          : ${NETWORK_NAME}"
 echo "=========================================="
 
@@ -212,6 +221,33 @@ podman run -d \
 echo "[INFO] Kafka UI started. WebUI available at http://localhost:9080"
 
 # ------------------------------------------------------------------
+# 4c. 啟動 PostgreSQL (LTS 穩定版本，用於存放信用卡當月額度上限)
+#     使用官方 init sql 機制：掛載 conf/postgres/init 至
+#     /docker-entrypoint-initdb.d，容器首次啟動（資料目錄為空）時
+#     會依檔名順序自動執行其中的 DDL / DML sql
+# ------------------------------------------------------------------
+mkdir -p "${POSTGRES_DATA_HOST}"
+
+echo "[INFO] Starting PostgreSQL..."
+podman run -d \
+    --restart always \
+    --name "postgres" \
+    --network "${NETWORK_NAME}" \
+    --hostname postgres \
+    -p 5432:5432 \
+    -e TZ=${TZ} \
+    -e POSTGRES_DB=${POSTGRES_DB} \
+    -e POSTGRES_USER=${POSTGRES_USER} \
+    -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD} \
+    -v "${POSTGRES_DATA_HOST}:/var/lib/postgresql/data:z" \
+    -v "${POSTGRES_INIT_HOST}:/docker-entrypoint-initdb.d:z" \
+    "${POSTGRES_IMAGE}"
+
+echo "[INFO] Waiting for PostgreSQL to initialize (10 seconds)..."
+sleep 10
+echo "[INFO] PostgreSQL started. JDBC URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}"
+
+# ------------------------------------------------------------------
 # 5. 啟動 JobManager (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
 # ------------------------------------------------------------------
 echo "[INFO] Starting JobManager..."
@@ -307,6 +343,8 @@ echo " HDFS RPC         : hdfs://namenode:9000"
 echo " Kafka Bootstrap  : localhost:9092 (internal: kafka:9092)"
 echo " Kafka UI         : http://localhost:9080"
 echo " Kafka Data Dir   : ${KAFKA_DATA_HOST}"
+echo " Postgres JDBC    : jdbc:postgresql://localhost:5432/${POSTGRES_DB} (internal: postgres:5432)"
+echo " Postgres User/Pw : ${POSTGRES_USER} / ${POSTGRES_PASSWORD}"
 echo " JobManager WebUI : http://localhost:8081"
 echo " TaskManagers     : 2 (each with 2 task slots)"
 echo " TM-1 Debug Port  : localhost:5005"
@@ -322,6 +360,9 @@ echo ""
 echo " 驗證 Kafka 狀態:"
 echo "   podman exec kafka kafka-topics --bootstrap-server kafka:9092 --list"
 echo "   podman exec kafka kafka-topics --bootstrap-server kafka:9092 --create --topic test --partitions 1 --replication-factor 1"
+echo ""
+echo " 驗證 PostgreSQL 狀態:"
+echo "   podman exec postgres psql -U ${POSTGRES_USER} -d ${POSTGRES_DB} -c 'SELECT * FROM card_limit;'"
 echo ""
 echo " 提交 Job 範例:"
 echo "   podman exec ${CONTAINER_PREFIX}-client flink run -m jobmanager:8081 /opt/flink/usrlib/<your-jar>.jar"

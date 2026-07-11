@@ -16,6 +16,7 @@ for name in "${CONTAINER_PREFIX}-client" \
             "${CONTAINER_PREFIX}-jobmanager" \
             "kafka-ui" \
             "kafka" \
+            "postgres" \
             "hadoop-datanode" \
             "hadoop-namenode"; do
     if podman container exists "${name}" 2>/dev/null; then
