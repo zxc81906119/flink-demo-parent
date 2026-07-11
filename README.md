@@ -245,9 +245,21 @@ untitled1/
     ├── model/
     │   ├── CreditCardTransaction.java       # 交易事件 POJO
     │   └── FraudAlert.java                  # 告警事件 POJO
-    └── serialization/
-        ├── TransactionDeserializer.java     # Kafka 反序列化器
-        └── AlertSerializer.java             # Kafka 序列化器
+    ├── serialization/
+    │   ├── TransactionDeserializer.java     # Kafka 反序列化器
+    │   └── AlertSerializer.java             # Kafka 序列化器
+    └── monthly/                              # Job 2：每月消费统计 + 额度分级
+        ├── MonthlyCreditLevelJob.java        # Job 入口
+        ├── model/
+        │   └── MonthlyConsumptionFact.java   # Drools input/output 共用 fact
+        ├── repository/
+        │   └── CardLimitRepository.java      # PostgreSQL 额度上限查询（含快取）
+        ├── rule/
+        │   └── CardLevelRuleEngine.java      # Drools KieBase/KieSession 封装
+        ├── process/
+        │   └── MonthlyAggregationFunction.java # 每月累加 + 月结触发规则引擎
+        └── serialization/
+            └── LevelResultSerializer.java    # 分级结果 Kafka 序列化器
 ```
 
 ## 关键特性
@@ -312,6 +324,89 @@ untitled1/
 1. 确认 Kafka topic 有数据流入
 2. 检查数据格式是否正确（JSON）
 3. 查看 Flink WebUI 中的异常信息
+
+## Job 2：每月信用卡消费统计与额度分级（MonthlyCreditLevelJob）
+
+在既有 CEP 风控 Job 之外，新增独立的 Flink Job，用来即时统计「每张卡、每个月」的消费总金额，并在月结时透过 Drools 决策表规则引擎计算出该卡的额度分级建议。
+
+### 系统架构
+
+```
+Kafka (credit-card-transactions)          PostgreSQL (card_limit 表)
+          ↓                                         ↓
+   依 cardNumber 分组                                │
+   即时累加当月消费金额（仅 log，不立即输出）              │
+          ↓ 处理时间跨月触发 timer                     │
+   查询该卡当月额度上限 ─────────────────────────────────┘
+          ↓
+   Drools 决策表规则引擎（CardLevelRules.xlsx）
+   计算 status / description
+          ↓
+Kafka (credit-card-level-results)
+```
+
+- **数据来源**：与 `Main.java` 完全相同的 Kafka topic（`credit-card-transactions`）与 `CreditCardTransaction` 资料结构，`Deserializer` 亦沿用 `TransactionDeserializer`。
+- **聚合逻辑**：`MonthlyAggregationFunction`（`KeyedProcessFunction`，依 `cardNumber` 分组）在 Flink State 中累加当月金额，每笔交易到达时更新并记录 log；使用处理时间 timer，在下个月开始时触发月结运算。
+- **额度查询**：`CardLimitRepository` 透过 JDBC 查询 PostgreSQL `card_limit` 表（以卡号为主键），并有简单快取；查无资料时以预设额度 100000 处理。
+- **规则引擎**：`CardLevelRuleEngine` 使用 Drools 10（`drools-mvel` + `drools-decisiontables`，embedded 方式以 Maven 引入）载入 `src/main/resources/rules/CardLevelRules.xlsx` 决策表；Fact 物件 `MonthlyConsumptionFact` 同时作为规则的 input（`monthlyAmount`、`cardLimit`）与 output（`status`、`description`），不额外拆分物件。
+- **输出**：分级结果以 JSON 序列化（`LevelResultSerializer`），输出到新 Kafka topic `credit-card-level-results`。
+
+### 决策表规则（CardLevelRules.xlsx）
+
+| 条件 | status | description |
+|---|---|---|
+| 卡额度上限 <= 100000 | 1 | 建议提升上限 |
+| 100000 < 卡额度上限 <= 500000 且 当月消费金额 >= 上限 - 5000 | 2 | 自动提高上限 |
+| 100000 < 卡额度上限 <= 500000 且 当月消费金额 < 上限 - 5000 | 3 | 需促销 |
+| 500000 < 卡额度上限 <= 1000000 且 当月消费金额 >= 上限 - 5000 | 4 | 可换发黑卡 |
+| 500000 < 卡额度上限 <= 1000000 且 当月消费金额 < 上限 - 5000 | 5 | 不需调整 |
+| 卡额度上限 > 1000000 | 5 | 不需调整 |
+
+规则以 Excel 决策表撰写，可直接修改 `CardLevelRules.xlsx` 中的数据行调整门槛，无需改动 Java 代码；修改后请以 `mvn test -Dtest=CardLevelRuleEngineTest` 验证各分支仍正确命中。
+
+### PostgreSQL（card_limit 表）
+
+`scripts/start-flink-cluster.sh` 已加入 PostgreSQL（版本 17，podman 启动，与 Flink 集群同一个 network）；容器启动时会自动挂载 `conf/postgres/init/` 下的 SQL 建立资料：
+
+- `01-ddl.sql`：建立 `card_limit` 表（`card_number` 为主键、`credit_limit` 为该卡当月额度上限）。
+- `02-dml.sql`：写入测试资料，包含与本 README 交易范例相同的卡号（如 `****1234`），以及一批随机产生的卡号与额度上限，供各分级规则分支测试使用。
+
+连线参数（`MonthlyCreditLevelJob` 中设定，如需调整请同步修改 `scripts/start-flink-cluster.sh`）：
+
+- JDBC URL：`jdbc:postgresql://postgres:5432/carddb`
+- 使用者/密码：`carduser` / `cardpass`
+
+### 运行方式
+
+```bash
+# 1. 启动集群（含 Flink / HDFS / PostgreSQL）
+bash scripts/start-flink-cluster.sh
+
+# 2. 编译打包
+mvn clean package
+
+# 3. 建立新 Kafka topic（分级结果输出用）
+kafka-topics.sh --create \
+  --bootstrap-server kafka:9092 \
+  --topic credit-card-level-results \
+  --partitions 3 \
+  --replication-factor 1
+
+# 4. 提交 Job（需指定主类，因预设 shade 主类为 Main）
+bash scripts/submit-job.sh untitled1-1.0-SNAPSHOT.jar --class org.example.monthly.MonthlyCreditLevelJob
+
+# 5. 消费分级结果
+kafka-console-consumer.sh --bootstrap-server kafka:9092 --topic credit-card-level-results --from-beginning
+```
+
+### 单元测试
+
+- `CardLevelRuleEngineTest`：验证决策表 5 种分级（status 1~5）各分支皆正确命中。
+- `MonthlyAggregationFunctionTest`：验证月结前不输出、跨月后才输出正确的分级结果。
+
+```bash
+mvn test
+```
 
 ## 许可证
 
