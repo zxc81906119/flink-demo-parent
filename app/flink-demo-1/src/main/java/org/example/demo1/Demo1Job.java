@@ -37,9 +37,12 @@ public class Demo1Job {
 
     // Kafka 配置
     private static final String KAFKA_BOOTSTRAP_SERVERS = "kafka:9092";
+    // 信用卡交易事件的 Kafka Topic
     private static final String TRANSACTION_TOPIC = "credit-card-transactions";
+    // 詐欺告警事件的 Kafka Topic
     private static final String ALERT_TOPIC = "fraud-alerts";
-    private static final String CONSUMER_GROUP = "fraud-detection-group";
+    // 消費者群組 ID（用於 Kafka 消費者）
+    private static final String KAFKA_CONSUMER_GROUP = "fraud-detection-group";
     // HDFS Checkpoint 配置
     private static final String CHECKPOINT_PATH = "hdfs://namenode:9000/flink/checkpoints/fraud-detection";
 
@@ -79,7 +82,7 @@ public class Demo1Job {
         KafkaSource<CreditCardTransaction> kafkaSource = KafkaSource.<CreditCardTransaction>builder()
                 .setBootstrapServers(KAFKA_BOOTSTRAP_SERVERS)
                 .setTopics(TRANSACTION_TOPIC)
-                .setGroupId(CONSUMER_GROUP)
+                .setGroupId(KAFKA_CONSUMER_GROUP)
                 .setStartingOffsets(OffsetsInitializer.latest()) // 从最早的消息开始消费
                 .setValueOnlyDeserializer(new TransactionDeserializer())
                 .build();
@@ -173,7 +176,7 @@ public class Demo1Job {
                 }
         ).name("Fraud Alert Generator");
 
-//        alertStream.print("debug");
+        alertStream.print("print alert stream");
         // 12. 创建 Kafka Sink
         KafkaSink<FraudAlert> kafkaSink = KafkaSink.<FraudAlert>builder()
                 .setBootstrapServers(KAFKA_BOOTSTRAP_SERVERS)
