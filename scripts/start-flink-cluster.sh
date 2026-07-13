@@ -14,7 +14,7 @@ HADOOP_IMAGE="docker.io/apache/hadoop:${HADOOP_VERSION}"
 KAFKA_VERSION="7.9.0"
 KAFKA_IMAGE="docker.io/confluentinc/cp-kafka:${KAFKA_VERSION}"
 KAFKA_UI_IMAGE="docker.io/kafbat/kafka-ui:latest"
-POSTGRES_VERSION="17"
+POSTGRES_VERSION="15"
 POSTGRES_IMAGE="docker.io/library/postgres:${POSTGRES_VERSION}"
 POSTGRES_DB="carddb"
 POSTGRES_USER="carduser"
@@ -53,7 +53,7 @@ HADOOP_LIB_CONTAINER="/opt/flink/hadoop-lib"
 # Kafka 資料持久化目錄
 KAFKA_DATA_HOST="${PROJECT_DIR}/data/kafka"
 # PostgreSQL 資料持久化目錄 + init sql 目錄
-POSTGRES_DATA_HOST="${PROJECT_DIR}/data/postgres"
+POSTGRES_DATA_HOST="pg_data"
 POSTGRES_INIT_HOST="${PROJECT_DIR}/conf/postgres/init"
 
 echo "=========================================="
@@ -233,7 +233,6 @@ echo "[INFO] Kafka UI started. WebUI available at http://localhost:9080"
 #     card_limit 表的 REPLICA IDENTITY 設為 FULL（確保 UPDATE/DELETE
 #     事件攜帶完整欄位值）。
 # ------------------------------------------------------------------
-mkdir -p "${POSTGRES_DATA_HOST}"
 
 echo "[INFO] Starting PostgreSQL..."
 podman run -d \

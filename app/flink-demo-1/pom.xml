@@ -1,0 +1,43 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>flink-demo-parent</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+    <artifactId>flink-demo-1</artifactId>
+    <properties>
+        <maven-shade-plugin.mainClass>org.example.demo1.Demo1Job</maven-shade-plugin.mainClass>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>flink-demo-common</artifactId>
+        </dependency>
+
+        <!-- Flink CEP for Complex Event Processing -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-cep</artifactId>
+        </dependency>
+
+        <!-- Flink Kafka Connector -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+        </dependency>
+
+
+    </dependencies>
+    <build>
+        <plugins>
+            <!-- Maven Shade Plugin for creating uber-jar -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

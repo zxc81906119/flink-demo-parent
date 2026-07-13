@@ -6,8 +6,8 @@ set -euo pipefail
 # 用法: ./submit-job.sh <jar-filename> [flink-run-args...]
 #
 # 範例:
-#   ./submit-job.sh my-flink-job-1.0-SNAPSHOT.jar
-#   ./submit-job.sh my-flink-job-1.0-SNAPSHOT.jar --class com.example.MyJob
+#   ./submit-job.sh my-flink-job-1.0.0.jar
+#   ./submit-job.sh my-flink-job-1.0.0.jar --class com.example.MyJob
 ##############################################################################
 
 CONTAINER_PREFIX="flink"
@@ -21,8 +21,8 @@ if [ $# -lt 1 ]; then
     echo "  jar-filename: 位於專案 target/ 目錄下的 jar 檔名"
     echo ""
     echo "範例:"
-    echo "  $0 untitled1-1.0-SNAPSHOT.jar"
-    echo "  $0 untitled1-1.0-SNAPSHOT.jar --class org.example.Main"
+    echo "  $0 untitled1-1.0.0.jar"
+    echo "  $0 untitled1-1.0.0.jar --class org.example.Main"
     exit 1
 fi
 

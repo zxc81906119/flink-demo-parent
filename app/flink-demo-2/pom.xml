@@ -1,0 +1,59 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>org.example</groupId>
+        <artifactId>flink-demo-parent</artifactId>
+        <version>1.0.0</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+    <artifactId>flink-demo-2</artifactId>
+    <properties>
+        <maven-shade-plugin.mainClass>org.example.demo2.Demo2Job</maven-shade-plugin.mainClass>
+    </properties>
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-kafka</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.kie</groupId>
+            <artifactId>kie-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-compiler</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-mvel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-decisiontables</artifactId>
+        </dependency>
+
+        <!-- Flink CDC (Postgres)：以 WAL 邏輯複製即時捕捉 card_limit 表異動，
+             取代逐筆 JDBC 查詢的 enrichment 方式（stream + table 概念） -->
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-connector-postgres-cdc</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.example</groupId>
+            <artifactId>flink-demo-common</artifactId>
+        </dependency>
+
+    </dependencies>
+    <build>
+        <plugins>
+            <!-- Maven Shade Plugin for creating uber-jar -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+</project>

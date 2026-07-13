@@ -3,25 +3,35 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-
     <groupId>org.example</groupId>
-    <artifactId>untitled1</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <artifactId>flink-demo-parent</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
 
     <properties>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <flink.version>1.20.1</flink.version>
-        <kafka.connector.version>3.1.0-1.18</kafka.connector.version>
-        <jackson.version>2.15.2</jackson.version>
-        <hadoop.version>3.3.6</hadoop.version>
         <lombok.version>1.18.32</lombok.version>
-        <slf4j-api.version>1.7.36</slf4j-api.version>
-        <drools.version>10.2.0</drools.version>
-        <postgresql.version>42.7.4</postgresql.version>
-        <junit.version>5.10.2</junit.version>
+
+        <flink.version>1.20.1</flink.version>
+        <hadoop.version>3.3.6</hadoop.version>
+
+        <kafka.connector.version>3.1.0-1.18</kafka.connector.version>
         <flink-cdc.version>3.6.0-1.20</flink-cdc.version>
+        <postgresql.version>42.7.3</postgresql.version>
+
+        <commons-io.version>2.15.1</commons-io.version>
+
+        <junit-bom.version>5.10.1</junit-bom.version>
+        <log4j-bom.version>2.24.3</log4j-bom.version>
+        <slf4j-api.version>1.7.36</slf4j-api.version>
+
+        <jackson-bom.version>2.15.2</jackson-bom.version>
+        <drools-bom.version>8.44.0.Final</drools-bom.version>
+
+        <maven-shade-plugin.version>3.5.0</maven-shade-plugin.version>
+        <maven-shade-plugin.mainClass>nothing</maven-shade-plugin.mainClass>
     </properties>
 
 
@@ -57,17 +67,6 @@
             <artifactId>flink-statebackend-rocksdb</artifactId>
         </dependency>
 
-        <!-- Jackson for JSON serialization -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-core</artifactId>
-        </dependency>
-
         <!-- Hadoop 3.x Client for HDFS checkpoint storage
              使用 provided scope：實際 JAR 由啟動腳本從 Maven Central 下載
              並透過 HADOOP_CLASSPATH 掛載到 Flink 容器的 classpath -->
@@ -87,14 +86,15 @@
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
         </dependency>
-        <!-- SLF4J Logging -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <scope>provided</scope>
-        </dependency>
 
-        <!-- Drools 10 Embedded Rule Engine (決策表 Excel 支援) -->
+        <dependency>
+            <groupId>org.kie</groupId>
+            <artifactId>kie-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.drools</groupId>
+            <artifactId>drools-compiler</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.drools</groupId>
             <artifactId>drools-mvel</artifactId>
@@ -104,24 +104,11 @@
             <artifactId>drools-decisiontables</artifactId>
         </dependency>
 
-        <!-- PostgreSQL JDBC Driver：查詢信用卡當月額度上限 -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-        </dependency>
-
         <!-- Flink CDC (Postgres)：以 WAL 邏輯複製即時捕捉 card_limit 表異動，
              取代逐筆 JDBC 查詢的 enrichment 方式（stream + table 概念） -->
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-connector-postgres-cdc</artifactId>
-        </dependency>
-
-        <!-- JUnit 5：規則引擎單元測試 -->
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
         </dependency>
 
         <!-- Flink 測試工具：KeyedProcessFunction 測試（含 timer）需要 test harness -->
@@ -140,6 +127,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.example</groupId>
+                <artifactId>flink-demo-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <!-- Flink Core Dependencies -->
             <dependency>
                 <groupId>org.apache.flink</groupId>
@@ -167,24 +159,18 @@
                 <version>${kafka.connector.version}</version>
             </dependency>
 
+            <!-- Flink CDC (Postgres) -->
+            <dependency>
+                <groupId>org.apache.flink</groupId>
+                <artifactId>flink-connector-postgres-cdc</artifactId>
+                <version>${flink-cdc.version}</version>
+            </dependency>
+
             <!-- RocksDB State Backend -->
             <dependency>
                 <groupId>org.apache.flink</groupId>
                 <artifactId>flink-statebackend-rocksdb</artifactId>
                 <version>${flink.version}</version>
-            </dependency>
-
-            <!-- Jackson for JSON serialization -->
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
-                <version>${jackson.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-core</artifactId>
-                <version>${jackson.version}</version>
             </dependency>
 
             <!-- Hadoop 3.x Client for HDFS checkpoint storage
@@ -201,150 +187,131 @@
                 <artifactId>hadoop-client-runtime</artifactId>
                 <version>${hadoop.version}</version>
             </dependency>
+
             <dependency>
                 <groupId>org.projectlombok</groupId>
                 <artifactId>lombok</artifactId>
                 <version>${lombok.version}</version>
             </dependency>
+
             <!-- SLF4J Logging -->
             <dependency>
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-api</artifactId>
                 <version>${slf4j-api.version}</version>
             </dependency>
-
-            <!-- Drools 10 Embedded Rule Engine -->
-            <dependency>
-                <groupId>org.drools</groupId>
-                <artifactId>drools-mvel</artifactId>
-                <version>${drools.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.drools</groupId>
-                <artifactId>drools-decisiontables</artifactId>
-                <version>${drools.version}</version>
-            </dependency>
-
             <!-- PostgreSQL JDBC Driver -->
             <dependency>
                 <groupId>org.postgresql</groupId>
                 <artifactId>postgresql</artifactId>
                 <version>${postgresql.version}</version>
             </dependency>
-
-            <!-- Flink CDC (Postgres) -->
-            <dependency>
-                <groupId>org.apache.flink</groupId>
-                <artifactId>flink-connector-postgres-cdc</artifactId>
-                <version>${flink-cdc.version}</version>
-            </dependency>
-
             <!-- 強制指定 commons-io 版本：Apache POI 5.x（Drools 決策表 xlsx 解析依賴）
                  需要 BoundedInputStream.Builder，舊版 commons-io（由其他依賴帶入）不含此 API -->
             <dependency>
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
-                <version>2.16.1</version>
+                <version>${commons-io.version}</version>
             </dependency>
-
-            <!-- JUnit 5 BOM -->
-            <dependency>
-                <groupId>org.junit.jupiter</groupId>
-                <artifactId>junit-jupiter</artifactId>
-                <version>${junit.version}</version>
-                <scope>test</scope>
-            </dependency>
-
             <!-- Flink 測試工具 -->
             <dependency>
                 <groupId>org.apache.flink</groupId>
                 <artifactId>flink-streaming-java</artifactId>
                 <classifier>tests</classifier>
                 <version>${flink.version}</version>
-                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
                 <artifactId>flink-test-utils</artifactId>
                 <version>${flink.version}</version>
-                <scope>test</scope>
             </dependency>
 
-            <!-- 統一 log4j-core 版本，避免與 drools 帶入的較新 log4j-api 不相容 -->
             <dependency>
                 <groupId>org.apache.logging.log4j</groupId>
-                <artifactId>log4j-core</artifactId>
-                <version>2.24.3</version>
-                <scope>test</scope>
+                <artifactId>log4j-bom</artifactId>
+                <version>${log4j-bom.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
             </dependency>
             <dependency>
-                <groupId>org.apache.logging.log4j</groupId>
-                <artifactId>log4j-slf4j-impl</artifactId>
-                <version>2.24.3</version>
-                <scope>test</scope>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit-bom.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>org.drools</groupId>
+                <artifactId>drools-bom</artifactId>
+                <type>pom</type>
+                <version>${drools-bom.version}</version>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson-bom.version}</version>
+                <scope>import</scope>
+                <type>pom</type>
             </dependency>
         </dependencies>
     </dependencyManagement>
 
     <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-                <configuration>
-                    <source>11</source>
-                    <target>11</target>
-                </configuration>
-            </plugin>
-
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
-            </plugin>
-
-            <!-- Maven Shade Plugin for creating uber-jar -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.0</version>
-                <executions>
-                    <execution>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>shade</goal>
-                        </goals>
-                        <configuration>
-                            <artifactSet>
-                                <excludes>
-                                    <exclude>org.apache.flink:flink-shaded-force-shading</exclude>
-                                    <exclude>com.google.code.findbugs:jsr305</exclude>
-                                    <exclude>org.slf4j:*</exclude>
-                                    <exclude>org.apache.logging.log4j:*</exclude>
-                                </excludes>
-                            </artifactSet>
-                            <filters>
-                                <filter>
-                                    <artifact>*:*</artifact>
+        <finalName>${project.artifactId}</finalName>
+        <pluginManagement>
+            <plugins>
+                <!-- Maven Shade Plugin for creating uber-jar -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>${maven-shade-plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <id>shade-jar</id>
+                            <phase>package</phase>
+                            <goals>
+                                <goal>shade</goal>
+                            </goals>
+                            <configuration>
+                                <artifactSet>
                                     <excludes>
-                                        <exclude>META-INF/*.SF</exclude>
-                                        <exclude>META-INF/*.DSA</exclude>
-                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>org.apache.flink:flink-shaded-force-shading</exclude>
+                                        <exclude>com.google.code.findbugs:jsr305</exclude>
+                                        <exclude>org.slf4j:*</exclude>
+                                        <exclude>org.apache.logging.log4j:*</exclude>
                                     </excludes>
-                                </filter>
-                            </filters>
-                            <transformers>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>org.example.Main</mainClass>
-                                </transformer>
-                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
-                            </transformers>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
+                                </artifactSet>
+                                <filters>
+                                    <filter>
+                                        <artifact>*:*</artifact>
+                                        <excludes>
+                                            <exclude>META-INF/*.SF</exclude>
+                                            <exclude>META-INF/*.DSA</exclude>
+                                            <exclude>META-INF/*.RSA</exclude>
+                                        </excludes>
+                                    </filter>
+                                </filters>
+                                <transformers>
+                                    <transformer
+                                            implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                        <mainClass>${maven-shade-plugin.mainClass}</mainClass>
+                                    </transformer>
+                                    <transformer
+                                            implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                </transformers>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
     </build>
 
+    <modules>
+        <module>app/flink-demo-1</module>
+        <module>app/flink-demo-2</module>
+        <module>app/flink-demo-common</module>
+    </modules>
 </project>

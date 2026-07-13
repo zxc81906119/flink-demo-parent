@@ -7,21 +7,22 @@ echo "=========================================="
 echo " Flink 信用卡风控系统 - 构建部署脚本"
 echo "=========================================="
 
-
-export JAVA_HOME="c:/Users/2302022/.jdks/corretto-17.0.17"
-export PATH="$JAVA_HOME/bin:$PATH"
 # 1. 清理并编译
 echo "[1/4] 清理并编译项目..."
+#JAVA_HOME="/c/Users/2302022/.jdks/corretto-11.0.31-1"
+#PATH="$JAVA_HOME/bin:$PATH"
+
+
 mvn clean package -DskipTests
 
 # 2. 检查 JAR 文件
-if [ ! -f "target/untitled1-1.0-SNAPSHOT.jar" ]; then
+if [ ! -f "target/untitled1-1.0.0.jar" ]; then
     echo "[ERROR] JAR 文件未生成，编译失败！"
     exit 1
 fi
 
-echo "[SUCCESS] JAR 文件生成成功: target/untitled1-1.0-SNAPSHOT.jar"
-ls -lh target/untitled1-1.0-SNAPSHOT.jar
+echo "[SUCCESS] JAR 文件生成成功: target/untitled1-1.0.0.jar"
+ls -lh target/untitled1-1.0.0.jar
 
 # 3. 检查 Flink 集群是否运行
 echo ""
@@ -55,7 +56,7 @@ fi
 # 4. 提交 Job
 echo ""
 echo "[3/4] 提交 Flink Job..."
-bash scripts/submit-job.sh untitled1-1.0-SNAPSHOT.jar
+bash scripts/submit-job.sh untitled1-1.0.0.jar
 
 echo ""
 echo "=========================================="
