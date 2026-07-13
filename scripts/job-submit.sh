@@ -10,7 +10,13 @@ APP_DIR="${PROJECT_DIR}/app"
 JAR_DIR="${APP_DIR}/jars"
 
 APP_NAME="$1"
-shift
+PARALLELISM=1
+if [[ "$#" -gt 1 ]]; then
+  PARALLELISM=$2
+  shift 2
+else
+  shift
+fi
 EXTRA_ARGS="${*:-}"
 
 mvn clean package -f "${PROJECT_DIR}/pom.xml" -am -pl "app/${APP_NAME}" -DskipTests
@@ -37,7 +43,7 @@ export MSYS_NO_PATHCONV=1
 podman exec "${CLIENT_CONTAINER}" \
     flink run -m "${JOBMANAGER_ADDRESS}" \
     -d \
-    -p 3 \
+    -p "${PARALLELISM}" \
     ${EXTRA_ARGS} \
     "${USRLIB_PATH}/${JAR_NAME}"
 

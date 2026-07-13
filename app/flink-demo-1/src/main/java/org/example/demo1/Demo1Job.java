@@ -43,17 +43,13 @@ public class Demo1Job {
     // HDFS Checkpoint 配置
     private static final String CHECKPOINT_PATH = "hdfs://namenode:9000/flink/checkpoints/fraud-detection";
 
-    // 并行度配置（匹配 Kafka partition 数量）
-    private static final int PARALLELISM = 3;
-
     public static void main(String[] args) throws Exception {
 
         // 1. 创建 Flink 流执行环境
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         // 2. 配置全局并行度
-        // todo 由 flink run 指定比較能動態 , 不然會被這邊 override
-//        env.setParallelism(PARALLELISM);
+//        env.setParallelism(1);
 
         // 3. 配置 RocksDB 状态后端
         env.setStateBackend(new EmbeddedRocksDBStateBackend(true));
@@ -65,16 +61,16 @@ public class Demo1Job {
         checkpointConfig.setMinPauseBetweenCheckpoints(30000); // 两次 checkpoint 间隔至少 30 秒
         checkpointConfig.setCheckpointTimeout(600000); // checkpoint 超时时间 10 分钟
         checkpointConfig.setMaxConcurrentCheckpoints(1); // 同时只允许一个 checkpoint
-        checkpointConfig.setExternalizedCheckpointCleanup(
-                CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION
-        ); // Job 取消时保留 checkpoint
+        checkpointConfig.setExternalizedCheckpointCleanup(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION); // Job 取消时保留 checkpoint
         checkpointConfig.setCheckpointStorage(CHECKPOINT_PATH);
 
         // 5. 配置重启策略
-        env.setRestartStrategy(RestartStrategies.fixedDelayRestart(
-                3, // 最多重启 3 次
-                Time.of(10, TimeUnit.SECONDS) // 每次重启间隔 10 秒
-        ));
+        env.setRestartStrategy(
+                RestartStrategies.fixedDelayRestart(
+                        3, // 最多重启 3 次
+                        Time.of(10, TimeUnit.SECONDS) // 每次重启间隔 10 秒
+                )
+        );
 
         // debug 比較好看 job 圖
 //        env.disableOperatorChaining();
@@ -120,7 +116,6 @@ public class Demo1Job {
                 .times(3)           // 连续 3 次
                 .consecutive()      // 严格连续（中间不能有其他交易）
                 .within(Duration.ofMinutes(1));
-
 
         // 10. 应用 CEP 模式匹配（使用 Processing Time 语意）
         PatternStream<CreditCardTransaction> patternStream =
@@ -182,10 +177,12 @@ public class Demo1Job {
         // 12. 创建 Kafka Sink
         KafkaSink<FraudAlert> kafkaSink = KafkaSink.<FraudAlert>builder()
                 .setBootstrapServers(KAFKA_BOOTSTRAP_SERVERS)
-                .setRecordSerializer(KafkaRecordSerializationSchema.builder()
-                        .setTopic(ALERT_TOPIC)
-                        .setValueSerializationSchema(new AlertSerializer())
-                        .build())
+                .setRecordSerializer(
+                        KafkaRecordSerializationSchema.builder()
+                                .setTopic(ALERT_TOPIC)
+                                .setValueSerializationSchema(new AlertSerializer())
+                                .build()
+                )
                 .build();
         // 13. 将告警写入 Kafka
         alertStream.sinkTo(kafkaSink).name("Kafka Sink - Fraud Alerts");

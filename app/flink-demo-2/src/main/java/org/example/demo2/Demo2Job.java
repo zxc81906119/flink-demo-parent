@@ -30,13 +30,15 @@ import java.time.format.DateTimeFormatter;
 
 @Slf4j
 public class Demo2Job {
+
     public static final DateTimeFormatter YEAR_MONTH_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
     public static final ZoneId ZONE = ZoneId.systemDefault();
+
     // Kafka 設定：沿用 Main 之來源 topic 與資料結構
     private static final String KAFKA_BOOTSTRAP_SERVERS = "kafka:9092";
+    private static final String KAFKA_CONSUMER_GROUP = "monthly-card-level-group";
     private static final String TRANSACTION_TOPIC = "credit-card-transactions";
     private static final String LEVEL_RESULT_TOPIC = "credit-card-level-results";
-    private static final String CONSUMER_GROUP = "monthly-card-level-group";
 
     // PostgreSQL 設定：對應 scripts/start-flink-cluster.sh 啟動之 postgres 容器
     // 供 Flink CDC 監聽 card_limit 表使用（需 wal_level=logical，見 scripts/start-flink-cluster.sh）
@@ -48,8 +50,6 @@ public class Demo2Job {
     private static final String POSTGRES_USERNAME = "carduser";
     private static final String POSTGRES_PASSWORD = "cardpass";
     private static final String POSTGRES_SLOT_NAME = "monthly_card_level_slot";
-
-    private static final int PARALLELISM = 3;
 
     @Data
     @NoArgsConstructor
@@ -73,14 +73,16 @@ public class Demo2Job {
 
     public static void main(String[] args) throws Exception {
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.setParallelism(1);
-        env.getConfig().setAutoWatermarkInterval(200L);
+
+//        env.setParallelism(1);
+
+//        env.getConfig().setAutoWatermarkInterval(200L);
 
         // 1. Kafka Source：與 Main 相同的來源 topic 與反序列化器
         KafkaSource<CreditCardTransaction> kafkaSource = KafkaSource.<CreditCardTransaction>builder()
                 .setBootstrapServers(KAFKA_BOOTSTRAP_SERVERS)
                 .setTopics(TRANSACTION_TOPIC)
-                .setGroupId(CONSUMER_GROUP)
+                .setGroupId(KAFKA_CONSUMER_GROUP)
                 .setStartingOffsets(OffsetsInitializer.latest())
                 .setValueOnlyDeserializer(new TransactionDeserializer())
                 .build();

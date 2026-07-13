@@ -120,23 +120,23 @@ podman run -d \
 # 7. 啟動 TaskManager 2 (掛載 Hadoop 設定檔 + Hadoop 3.x jars)
 #    Remote Debug Port: 5006
 # ------------------------------------------------------------------
-#echo "[INFO] Starting TaskManager 2 (debug port: 5006)..."
-#podman run -d \
-#    --restart always \
-#    --name "${CONTAINER_PREFIX}-taskmanager-2" \
-#    --network "${NETWORK_NAME}" \
-#    -p 5006:5006 \
-#    -e TZ=${TZ} \
-#    -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
-#    -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2 \
-#    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
-#    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
-#    -e FLINK_ENV_JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006" \
-#    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
-#    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
-#    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
-#    "${FLINK_IMAGE}" \
-#    taskmanager
+echo "[INFO] Starting TaskManager 2 (debug port: 5006)..."
+podman run -d \
+    --restart always \
+    --name "${CONTAINER_PREFIX}-taskmanager-2" \
+    --network "${NETWORK_NAME}" \
+    -p 5006:5006 \
+    -e TZ=${TZ} \
+    -e JOB_MANAGER_RPC_ADDRESS=jobmanager \
+    -e TASK_MANAGER_NUMBER_OF_TASK_SLOTS=3 \
+    -e HADOOP_CONF_DIR=${HADOOP_CONF_CONTAINER} \
+    -e HADOOP_CLASSPATH="${HADOOP_LIB_CONTAINER}/*" \
+    -e FLINK_ENV_JAVA_OPTS="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5006" \
+    -v "${HADOOP_CONF_HOST}:${HADOOP_CONF_CONTAINER}:z" \
+    -v "${FLINK_CONF_HOST}/flink-conf.yaml:/opt/flink/conf/flink-conf.yaml:z" \
+    -v "${HADOOP_LIB_HOST}:${HADOOP_LIB_CONTAINER}:z" \
+    "${FLINK_IMAGE}" \
+    taskmanager
 
 # ------------------------------------------------------------------
 # 8. 啟動 Flink Client (掛載專案 target/ + Hadoop 設定檔 + Hadoop 3.x jars)
