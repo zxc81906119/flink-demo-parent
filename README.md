@@ -112,7 +112,7 @@ Pattern.<CreditCardTransaction>begin("first")
 
 ```bash
 cd D:\ij_proj\untitled1
-bash scripts/start-flink-cluster.sh
+bash scripts/start-all.sh
 ```
 
 启动后可访问：
@@ -408,7 +408,7 @@ podman exec postgres psql -U carduser -d carddb -c 'SELECT * FROM pg_replication
 
 ```bash
 # 1. 启动集群（含 Flink / HDFS / PostgreSQL）
-bash scripts/start-flink-cluster.sh
+bash scripts/start-all.sh
 
 # 2. 编译打包
 mvn clean package

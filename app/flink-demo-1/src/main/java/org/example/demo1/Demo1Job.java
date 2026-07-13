@@ -53,7 +53,7 @@ public class Demo1Job {
 
         // 2. 配置全局并行度
         // todo 由 flink run 指定比較能動態 , 不然會被這邊 override
-        env.setParallelism(PARALLELISM);
+//        env.setParallelism(PARALLELISM);
 
         // 3. 配置 RocksDB 状态后端
         env.setStateBackend(new EmbeddedRocksDBStateBackend(true));
@@ -125,6 +125,7 @@ public class Demo1Job {
         // 10. 应用 CEP 模式匹配（使用 Processing Time 语意）
         PatternStream<CreditCardTransaction> patternStream =
                 CEP.pattern(keyedStream, pattern)
+                        // todo 這代表是用處理時間判斷 within , 沒調用就是用事件時間
                         .inProcessingTime();
 
         // 11. 处理匹配结果，生成告警（带去重机制）

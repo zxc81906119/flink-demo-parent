@@ -29,7 +29,7 @@ echo ""
 echo "[2/4] 检查 Flink 集群状态..."
 if ! podman container exists flink-jobmanager 2>/dev/null; then
     echo "[WARNING] Flink 集群未运行，正在启动..."
-    bash scripts/start-flink-cluster.sh
+    bash scripts/start-all.sh
     echo "[INFO] 等待 Flink 集群初始化 (10 秒)..."
     sleep 10
 else
