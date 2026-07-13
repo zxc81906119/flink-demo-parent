@@ -7,6 +7,7 @@ target/
 *.iml
 *.ipr
 
+app/jars/
 
 ### Eclipse ###
 .apt_generated
