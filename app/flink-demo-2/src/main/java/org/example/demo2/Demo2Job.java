@@ -4,6 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.flink.api.common.eventtime.Watermark;
+import org.apache.flink.api.common.eventtime.WatermarkGenerator;
+import org.apache.flink.api.common.eventtime.WatermarkOutput;
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.cdc.connectors.base.options.StartupOptions;
 import org.apache.flink.cdc.connectors.postgres.source.PostgresSourceBuilder;
@@ -127,23 +130,21 @@ public class Demo2Job {
 
         DataStreamSource<CardLimitUpdate> cardLimitUpdates = env.fromSource(
                 cardLimitCdcSource,
-                WatermarkStrategy.<CardLimitUpdate>noWatermarks()
-                        .withIdleness(Duration.ofSeconds(5)),
-//                WatermarkStrategy.<CardLimitUpdate>forGenerator((ctx) ->
-//                        new WatermarkGenerator<CardLimitUpdate>() {
-//                            @Override
-//                            public void onEvent(CardLimitUpdate event, long eventTimestamp, WatermarkOutput output) {
-//                                // 收到數據時不需要做特別處理，或者也可以在這裡直接發送
-//                                output.emitWatermark(new Watermark(Long.MAX_VALUE));
-//                            }
-//
-//                            @Override
-//                            public void onPeriodicEmit(WatermarkOutput output) {
-//                                // 定期發送 Watermark 時，直接發送最大值
-//                                output.emitWatermark(new Watermark(Long.MAX_VALUE));
-//                            }
-//                        }
-//                ),
+                WatermarkStrategy.<CardLimitUpdate>forGenerator((ctx) ->
+                        new WatermarkGenerator<>() {
+                            @Override
+                            public void onEvent(CardLimitUpdate event, long eventTimestamp, WatermarkOutput output) {
+                                // 收到數據時不需要做特別處理，或者也可以在這裡直接發送
+                                output.emitWatermark(Watermark.MAX_WATERMARK);
+                            }
+
+                            @Override
+                            public void onPeriodicEmit(WatermarkOutput output) {
+                                // 定期發送 Watermark 時，直接發送最大值
+                                output.emitWatermark(Watermark.MAX_WATERMARK);
+                            }
+                        }
+                ),
                 "PostgreSQL card_limit CDC Source"
         );
         cardLimitUpdates.setParallelism(1);
