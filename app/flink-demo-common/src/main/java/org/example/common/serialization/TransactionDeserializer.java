@@ -38,6 +38,9 @@ public class TransactionDeserializer implements DeserializationSchema<CreditCard
         } catch (IOException e) {
             // 记录错误日志，但不中断流处理
             System.err.println("Failed to deserialize transaction: " + new String(message, StandardCharsets.UTF_8));
+            // 如果拋例外 , 不知道 flink kafka connector 會如何處理
+            // 基本上就是 kafka consumer 之 deserializer 的責任, 這裡就直接拋出
+            // todo 可能會有毒丸訊息的風險 , 是否就回傳 null 拋棄
             throw e;
         }
     }

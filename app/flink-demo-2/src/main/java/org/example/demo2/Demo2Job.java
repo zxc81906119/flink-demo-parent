@@ -94,7 +94,8 @@ public class Demo2Job {
                                 .withTimestampAssigner((event, timestamp) -> event.getTimestamp()),
                         "Kafka Source - Credit Card Transactions"
                 )
-                .name("Transaction Source");
+                .name("Transaction Source")
+                .setParallelism(3);
 
         // 2. 依卡號分組
         KeyedStream<CreditCardTransaction, BusinessKey> keyedStream = transactionStream

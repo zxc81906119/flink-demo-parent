@@ -40,7 +40,6 @@ public class MonthlyAggregationFunction
 
     public static final double DEFAULT_CARD_LIMIT = 100000.0;
 
-
     @Override
     public void open(Configuration parameters) {
 
@@ -87,10 +86,12 @@ public class MonthlyAggregationFunction
             );
             return;
         }
+
         registerNextMonthTimer(ctx, currentKey.getYearMonth());
-        double amount = Optional.ofNullable(txn.getAmount()).orElse(0.0);
+
         double lastMonthTotal = Optional.ofNullable(monthTotalState.value()).orElse(0.0);
-        monthTotalState.update(amount + lastMonthTotal);
+        double amount = Optional.ofNullable(txn.getAmount()).orElse(0.0);
+        monthTotalState.update(lastMonthTotal + amount);
 
     }
 
@@ -142,10 +143,11 @@ public class MonthlyAggregationFunction
                 null,
                 System.currentTimeMillis()
         );
-        // todo 規則引擎拋例外處理
+        // todo 拋例外解決
         out.collect(ruleEngine.evaluate(fact));
 
         finishState.update(true);
+
     }
 
     private void registerNextMonthTimer(ReadOnlyContext ctx, String yearMonth) {

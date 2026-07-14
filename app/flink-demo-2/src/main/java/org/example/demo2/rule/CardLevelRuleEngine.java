@@ -8,6 +8,7 @@ import org.kie.api.builder.KieBuilder;
 import org.kie.api.builder.KieFileSystem;
 import org.kie.api.builder.Message;
 import org.kie.api.io.ResourceType;
+import org.kie.api.runtime.KieContainer;
 import org.kie.api.runtime.KieSession;
 import org.kie.internal.io.ResourceFactory;
 
@@ -21,7 +22,9 @@ public class CardLevelRuleEngine implements Serializable {
 
     private transient KieBase kieBase;
 
-    /** 依據 fact 中的 cardLimit / monthlyAmount 計算 status / description，並回填至同一個 fact 物件。 */
+    /**
+     * 依據 fact 中的 cardLimit / monthlyAmount 計算 status / description，並回填至同一個 fact 物件。
+     */
     public MonthlyConsumptionFact evaluate(MonthlyConsumptionFact fact) {
         KieSession kieSession = getKieBase().newKieSession();
         try {
@@ -43,10 +46,13 @@ public class CardLevelRuleEngine implements Serializable {
     }
 
     private KieBase buildKieBase() {
-        KieServices kieServices = KieServices.Factory.get();
+        // 單利
+        KieServices kieServices = KieServices.get();
         KieFileSystem kfs = kieServices.newKieFileSystem();
-        kfs.write(ResourceFactory.newClassPathResource(DECISION_TABLE_PATH)
-                .setResourceType(ResourceType.DTABLE));
+        kfs.write(
+                ResourceFactory.newClassPathResource(DECISION_TABLE_PATH)
+                        .setResourceType(ResourceType.DTABLE)
+        );
 
         KieBuilder kieBuilder = kieServices.newKieBuilder(kfs);
         kieBuilder.buildAll();
@@ -54,8 +60,9 @@ public class CardLevelRuleEngine implements Serializable {
         if (kieBuilder.getResults().hasMessages(Message.Level.ERROR)) {
             throw new IllegalStateException("載入決策表失敗: " + kieBuilder.getResults().getMessages());
         }
-
-        return kieServices.newKieContainer(kieServices.getRepository().getDefaultReleaseId())
-                .getKieBase();
+        KieContainer kieContainer = kieServices.newKieContainer(
+                kieServices.getRepository().getDefaultReleaseId()
+        );
+        return kieContainer.getKieBase();
     }
 }

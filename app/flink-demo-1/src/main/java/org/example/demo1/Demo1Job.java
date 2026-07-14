@@ -95,7 +95,8 @@ public class Demo1Job {
                 ).filter(txn ->
                         txn != null && txn.getUserId() != null
                 )
-                .name("Transaction Source");
+                .name("Transaction Source")
+                .setParallelism(3);
 
         // 8. 按用户 ID 分组
         KeyedStream<CreditCardTransaction, String> keyedStream = transactionStream
