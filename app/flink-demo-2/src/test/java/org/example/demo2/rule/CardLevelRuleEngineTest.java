@@ -1,7 +1,6 @@
-package org.example.monthly.rule;
+package org.example.demo2.rule;
 
 import org.example.demo2.model.MonthlyConsumptionFact;
-import org.example.demo2.rule.CardLevelRuleEngine;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
