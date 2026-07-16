@@ -1,9 +1,27 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
 
-export THIS_SHELL_DIR="$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_DIR="$SCRIPT_DIR/../app"
 
-chmod u+x "${THIS_SHELL_DIR}/job-submit.sh"
-# 提交 demo1 和 demo2 job , task 並行度設置為 1
-"${THIS_SHELL_DIR}/job-submit.sh" "flink-demo-1" 1
-"${THIS_SHELL_DIR}/job-submit.sh" "flink-demo-2" 1
+fail_list=()
+
+for dir in "$APP_DIR"/*/; do
+    project=$(basename "$dir")
+
+    if [[ "$project" == *common* || "$project" == "jars" ]]; then
+        continue
+    fi
+
+    echo "=== Submitting job for: $project ==="
+    if ! "$SCRIPT_DIR/job-submit.sh" "$project" 1 ; then
+        echo "!!! Failed: $project"
+        fail_list+=("$project")
+    fi
+done
+
+if [[ ${#fail_list[@]} -gt 0 ]]; then
+    echo ""
+    echo "以下專案提交失敗：${fail_list[*]}"
+    exit 1
+fi
